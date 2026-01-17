@@ -5,8 +5,8 @@
   "main": "index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
-    "build": "tsc && vite build",
-    "start": "npx serve -s dist -l $PORT"
+    "build": "node ./node_modules/typescript/bin/tsc",
+    "start": "node dist/server.js"
   },
   "keywords": [],
   "author": "",
