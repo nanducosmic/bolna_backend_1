@@ -1,16 +1,23 @@
-// routes/callLog.routes.ts
 import express from "express";
-import { getCallStats, getContactsSummary } from "../controllers/callLog.controller";
-import CallLog from "../models/CallLog";
+import { 
+  getCallStats, 
+  getContactsSummary, 
+  getFullHistory, 
+  syncCallResults
+} from "../controllers/callLog.controller";
 
 const router = express.Router();
 
+// Matches: GET /api/call-logs/stats
 router.get("/stats", getCallStats);
-router.get("/call-logs/stats", getCallStats);  // for frontend api.ts
-router.get("/contacts-summary", getContactsSummary); // for ContactsTable
-router.get("/", async (_, res) => {
-  const logs = await CallLog.find().sort({ createdAt: -1 });
-  res.json(logs);
-});
+
+// Matches: GET /api/call-logs/summary
+router.get("/summary", getContactsSummary);
+
+// Matches: GET /api/call-logs/history (This is the one for your new page)
+router.get("/history", getFullHistory);
+
+// Matches: POST /api/call-logs/sync
+router.post("/sync", syncCallResults);
 
 export default router;
