@@ -2,14 +2,30 @@ import { Request, Response } from "express";
 import Contact from "../models/Contact";
 import CallLog from "../models/CallLog";
 import { createBolnaCall } from "../services/bolna.service";
+// 1. Import the automation engine
+import { getAutomationStatus } from "../services/automationEngine"; 
 
 export const initiateCalls = async (req: Request, res: Response) => {
   try {
-    const { prompt } = req.body;
+    // --- 2. THE AUTOMATION GATEKEEPER ---
+    // This checks Monday-Friday, 9-6, and your Google Calendar "Break"
+    const engineStatus = await getAutomationStatus();
+
+    if (!engineStatus.allowed) {
+      return res.status(403).json({ 
+        success: false,
+        message: "Automation Engine Blocked the Request",
+        reason: engineStatus.reason // e.g., "Busy: Daily Break" or "Weekend"
+      });
+    }
+    // ------------------------------------
+
+    // 3. Get gender and prompt from request body
+    const { prompt, gender = "male" } = req.body; 
+    
     if (!prompt) return res.status(400).json({ message: "Prompt is required" });
 
     // FIX: Look for 'pending' (new) OR 'no-answer' (retries)
-    // Also including a check for numbers with NO status at all (raw imports)
     const contactsToCall = await Contact.find({ 
       $or: [
         { status: "pending" },
@@ -17,7 +33,7 @@ export const initiateCalls = async (req: Request, res: Response) => {
         { status: { $exists: false } }, 
         { lastStatus: { $exists: false } }
       ]
-    }).limit(10); // Safety limit for testing
+    }).limit(10); 
 
     if (contactsToCall.length === 0) {
       return res.status(200).json({ 
@@ -26,21 +42,22 @@ export const initiateCalls = async (req: Request, res: Response) => {
       });
     }
 
-    // 2. Lock them to prevent duplicate triggering
+    // 4. Lock them to prevent duplicate triggering
     const contactIds = contactsToCall.map(c => c._id);
     await Contact.updateMany({ _id: { $in: contactIds } }, { $set: { status: "calling" } });
 
-    // 3. Fire calls
+    // 5. Fire calls
     const results = await Promise.all(contactsToCall.map(async (contact) => {
       try {
-        const response = await createBolnaCall(contact.phone, prompt);
+        const response = await createBolnaCall(contact.phone, prompt, gender);
 
         // Update logs and contact
         await CallLog.create({
           phone: contact.phone,
           bolnaCallId: response.execution_id,
           status: "initiated",
-          agentPrompt: prompt
+          agentPrompt: prompt,
+          gender: gender 
         });
 
         await Contact.findByIdAndUpdate(contact._id, { 
@@ -63,7 +80,7 @@ export const initiateCalls = async (req: Request, res: Response) => {
     }));
 
     res.json({ 
-      message: `Attempted ${contactsToCall.length} calls.`,
+      message: `Attempted ${contactsToCall.length} calls using ${gender} voice.`,
       results 
     });
 

@@ -3,40 +3,49 @@ import CallLog from "../models/CallLog";
 import Contact from "../models/Contact";
 import axios from "axios";
 
-/* ========= 1. SYNC CALL RESULTS (The "0 issue" fix) ========= */
+/* ========= 1. SYNC CALL RESULTS (Multi-Agent) ========= */
 export const syncCallResults = async (req: Request, res: Response) => {
   try {
-    const AGENT_ID = "9caf93c6-3b54-4159-9cf7-4d0707550e2b"; 
-    
-    // Fetch last 50 calls in one go
-    const response = await axios.get(
-      `https://api.bolna.ai/v2/agent/${AGENT_ID}/executions?page_size=50`, 
-      { headers: { Authorization: `Bearer ${process.env.BOLNA_API_KEY}` } }
-    );
+    const AGENT_IDS = [
+      process.env.BOLNA_FEMALE_AGENT_ID,
+      process.env.BOLNA_MALE_AGENT_ID
+    ].filter(Boolean);
 
-    const remoteCalls = response.data.data || [];
-
-    for (const remote of remoteCalls) {
-      // Wise Update: Upsert logic (Update if exists, Create if new)
-      await CallLog.findOneAndUpdate(
-        { bolnaCallId: remote.id },
-        {
-          phone: remote.user_number,
-          status: remote.status === "completed" ? "connected" : remote.status,
-          // Use the 14s duration from telephony if available, otherwise conversation_duration
-          duration: remote.telephony_data?.duration ? Number(remote.telephony_data.duration) : (remote.conversation_duration || 0),
-          cost: remote.total_cost || 0, // Capturing that 3.1 precisely
-          transcript: remote.transcript || "",
-          summary: remote.summary || "No summary generated.",
-          createdAt: new Date(remote.created_at || remote.initiated_at)
-        },
-        { upsert: true }
-      );
+    if (AGENT_IDS.length === 0) {
+      return res.status(400).json({ message: "No Agent IDs found." });
     }
 
-    res.json({ message: `Success! Synced ${remoteCalls.length} calls from Bolna.` });
-  } catch (error) {
-    console.error("Sync Error:", error);
+    let totalSyncedCount = 0;
+    for (const agentId of AGENT_IDS) {
+      const response = await axios.get(
+        `https://api.bolna.ai/v2/agent/${agentId}/executions?page_size=50`, 
+        { headers: { Authorization: `Bearer ${process.env.BOLNA_API_KEY}` } }
+      );
+
+      const remoteCalls = response.data.data || [];
+      totalSyncedCount += remoteCalls.length;
+
+      for (const remote of remoteCalls) {
+        await CallLog.findOneAndUpdate(
+          { bolnaCallId: remote.id },
+          {
+            phone: remote.user_number,
+            status: remote.status === "completed" ? "connected" : remote.status,
+            duration: remote.telephony_data?.duration 
+              ? Number(remote.telephony_data.duration) 
+              : (remote.conversation_duration || 0),
+            cost: remote.total_cost || 0,
+            transcript: remote.transcript || "",
+            summary: remote.summary || "No summary generated.",
+            createdAt: new Date(remote.created_at || remote.initiated_at)
+          },
+          { upsert: true }
+        );
+      }
+    }
+    res.json({ message: `Success! Synced ${totalSyncedCount} calls.` });
+  } catch (error: any) {
+    console.error("Sync Error:", error.message);
     res.status(500).json({ message: "Failed to pull history." });
   }
 };
@@ -56,16 +65,48 @@ export const getCallStats = async (req: Request, res: Response) => {
   } catch (error) { res.status(500).json({ message: "Error" }); }
 };
 
-/* ========= 3. GET FULL HISTORY ========= */
+/* ========= 3. GET FULL HISTORY (WITH PAGINATION & GRAND TOTAL) ========= */
 export const getFullHistory = async (req: Request, res: Response) => {
   try {
-    const history = await CallLog.find().sort({ createdAt: -1 });
-    res.json(history);
-  } catch (error) { res.status(500).json({ message: "Error" }); }
+    // 1. Get page and limit from request query
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const skip = (page - 1) * limit;
+
+    // 2. Fetch data, total count, and GRAND TOTAL cost in parallel
+    const [history, totalCalls, totalCostData] = await Promise.all([
+      CallLog.find()
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      CallLog.countDocuments(),
+      // This sums the 'cost' field for every document in the collection
+      CallLog.aggregate([
+        { $group: { _id: null, totalBurn: { $sum: "$cost" } } }
+      ])
+    ]);
+
+    // 3. Extract the grand total number
+    const grandTotalBurn = totalCostData.length > 0 ? totalCostData[0].totalBurn : 0;
+
+    // 4. Send back data + pagination metadata (including totalBurn)
+    res.json({
+      calls: history,
+      pagination: {
+        totalCalls,
+        grandTotalBurn, // This allows the frontend to show the amazing total
+        totalPages: Math.ceil(totalCalls / limit),
+        currentPage: page,
+        hasNextPage: skip + history.length < totalCalls,
+        hasPrevPage: page > 1
+      }
+    });
+  } catch (error) { 
+    res.status(500).json({ message: "Error fetching history" }); 
+  }
 };
 
-
-/* ========= 4. GET CONTACTS SUMMARY (FIXED FOR DASHBOARD) ========= */
+/* ========= 4. GET CONTACTS SUMMARY ========= */
 export const getContactsSummary = async (req: Request, res: Response) => {
   try {
     const summary = await CallLog.aggregate([
@@ -77,7 +118,6 @@ export const getContactsSummary = async (req: Request, res: Response) => {
           totalCalls: { $sum: 1 },
           lastStatus: { $first: "$status" },
           lastCalledAt: { $first: "$createdAt" },
-          // Logic: Pick transcript if it exists and isn't just whitespace
           transcript: { 
             $first: {
               $cond: [
@@ -92,9 +132,6 @@ export const getContactsSummary = async (req: Request, res: Response) => {
       { $sort: { lastCalledAt: -1 } },
       { $limit: 10 }
     ]);
-
     res.json(summary); 
-  } catch (error) {
-    res.status(500).json([]);
-  }
+  } catch (error) { res.status(500).json([]); }
 };

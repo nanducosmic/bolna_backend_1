@@ -30,3 +30,6 @@ Thumbs.db
 # Caches
 .vite/
 .eslintcache
+
+# Google Cloud Secrets
+google-credentials.json

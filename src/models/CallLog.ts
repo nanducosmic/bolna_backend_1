@@ -3,13 +3,13 @@ import mongoose, { Schema, Document } from "mongoose";
 export interface ICallLog extends Document {
   phone: string;
   agentPrompt?: string;
-  // Added 'test-call' to the status list
   status: "initiated" | "calling" | "completed" | "connected" | "not_connected" | "failed" | "in-progress" | "no-answer" | "busy" | "test-call";
   bolnaCallId?: string;
   transcript?: string; 
   cost?: number;
   summary?: string;
   duration?: number;
+  gender?: "male" | "female"; 
   createdAt: Date;
   updatedAt: Date;
 }
@@ -25,7 +25,6 @@ const callLogSchema = new Schema<ICallLog>(
     },
     status: {
       type: String,
-      // Added 'test-call' and 'connected' here to match your dashboard logic
       enum: ["initiated", "calling", "completed", "connected", "not_connected", "failed", "in-progress", "no-answer", "busy", "test-call"],
       default: "initiated",
     },
@@ -40,7 +39,6 @@ const callLogSchema = new Schema<ICallLog>(
       type: Number, 
       default: 0 
     },
-    // ADDED THESE TWO:
     cost: {
       type: Number,
       default: 0
@@ -48,9 +46,20 @@ const callLogSchema = new Schema<ICallLog>(
     summary: {
       type: String,
       default: ""
+    },
+    gender: {
+      type: String,
+      enum: ["male", "female"],
+      default: "male" 
     }
   },
   { timestamps: true }
 );
+
+/** * CRITICAL ADDITION: Pagination Index
+ * This ensures that sorting by newest calls (createdAt: -1) 
+ * remains lightning fast even as your database grows.
+ */
+callLogSchema.index({ createdAt: -1 });
 
 export default mongoose.model<ICallLog>("CallLog", callLogSchema);
