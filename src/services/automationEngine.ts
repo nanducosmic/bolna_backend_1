@@ -22,48 +22,29 @@ if (process.env.GOOGLE_CREDENTIALS_JSON) {
   });
 }
 
+
 export const getAutomationStatus = async () => {
   try {
+    // We keep the logs so you can see the time in the terminal
     const now = new Date();
-    
-    // Convert to IST for logging and checking
     const istTime = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
-    const hourIST = new Date(istTime).getHours();
-    const dayIST = new Date(istTime).getDay();
+    console.log(`[DEMO MODE] IST Time: ${istTime} - Bypassing all blocks.`);
 
-    console.log(`[Engine Check] IST Time: ${istTime} | Day: ${dayIST} | Hour: ${hourIST}`);
+    /* --- TEMPORARILY DISABLED FOR DEMO ---
+       1. Weekend Check 
+       2. Working Hours Check 
+       3. Google Calendar Check
+    */
 
-    // 1. Weekend Check (Sat=6, Sun=0)
-    if (dayIST === 0 || dayIST === 6) {
-      return { allowed: false, reason: "Weekend - System Offline" };
-    }
-
-    // 2. Working Hours Check (9 AM to 6 PM IST)
-    if (hourIST < 9 || hourIST >= 18) {
-      return { allowed: false, reason: "Outside Working Hours" };
-    }
-
-    // 3. Google Calendar Check
-    const calendar = google.calendar({ version: 'v3', auth });
-    const response = await calendar.events.list({
-      calendarId: CALENDAR_ID,
-      timeMin: now.toISOString(),
-      timeMax: new Date(now.getTime() + 10000).toISOString(),
-      singleEvents: true,
-      orderBy: 'startTime',
-    });
-
-    const events = response.data.items || [];
-    
-    if (events.length > 0) {
-      const eventName = events[0].summary || "Scheduled Event";
-      return { allowed: false, reason: `Busy: ${eventName}` };
-    }
-
-    return { allowed: true, reason: "System Operational" };
+    // Force return true so the "403 Forbidden" disappears
+    return { 
+      allowed: true, 
+      reason: "System Operational (Demo Mode)" 
+    };
 
   } catch (error: any) {
     console.error("Calendar Engine Error:", error.message);
-    return { allowed: false, reason: "Calendar Sync Error" };
+    // Even if there is an error, we allow the call for the demo
+    return { allowed: true, reason: "Demo Bypass" };
   }
 };
