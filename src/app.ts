@@ -1,56 +1,91 @@
-import express from "express";
+import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 
-// 1. New Imports for Security
-import authRoutes from "./routes/authRoutes";
+// Middleware Imports
 import { protect, adminOnly } from "./middleware/authMiddleware";
 
-// 2. Import the Automation Engine Service
-import { getAutomationStatus } from "./services/automationEngine";
-
-// Your Existing Imports
+// Route Imports
+import authRoutes from "./routes/authRoutes";
+import tenantRoutes from "./routes/tenant.routes";
 import contactRoutes from "./routes/contact.routes";
 import agentRoutes from "./routes/agent.routes";
 import callRoutes from "./routes/call.routes";
 import dashboardRoutes from "./routes/dashboard.routes";
 import callLogRoutes from "./routes/callLog.routes";
+import creditRoutes from "./routes/credit.routes";
+import campaignRoutes from "./routes/campaign.routes";
+import googleRoutes from "./routes/google.routes";
+import webhookRoutes from "./routes/webhook.routes"; 
+import knowledgeBaseRoutes from "./routes/knowledgeBase.routes"; 
+
+// Service Imports
+import { getAutomationStatus } from "./services/automationEngine";
 
 dotenv.config();
 
 const app = express();
 
+// --- GLOBAL MIDDLEWARE ---
 app.use(cors());
 app.use(express.json());
 
 // --- PUBLIC ROUTES ---
 app.use("/api/auth", authRoutes);
+app.use("/api/webhooks", webhookRoutes); // Public access for Bolna callbacks
 
-app.get("/", (req, res) => {
+app.get("/", (req: Request, res: Response) => {
   res.send("Backend API running 🚀");
 });
 
-// --- PROTECTED ROUTES ---
+// --- PROTECTED ROUTES (Tenant & Admin) ---
+app.use("/api/agent", protect, agentRoutes); 
+app.use("/api/contacts", protect, contactRoutes);
+app.use("/api/campaigns", protect, campaignRoutes);
+app.use("/api/google", protect, googleRoutes);
+app.use("/api/credits", protect, creditRoutes);
+app.use("/api/knowledge-base", protect, knowledgeBaseRoutes); 
 
-// NEW: System Status Route for the Dashboard Banner
-app.get("/api/system-status", protect, async (req, res) => {
+
+
+app.use("/api/dashboard", protect,  dashboardRoutes); 
+app.use("/api/call-logs", protect, adminOnly, callLogRoutes);   
+
+// Dashboard System Status
+app.get("/api/system-status", protect, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const status = await getAutomationStatus();
-    // We send back 'allowed' and 'reason' exactly as the frontend expects
     res.json({ 
       allowed: status.allowed, 
       reason: status.reason 
     });
   } catch (error) {
-    res.status(500).json({ allowed: false, reason: "Calendar Error" });
+    next(error); // Forward to global error handler
   }
 });
 
+// --- ADMIN ONLY ROUTES ---
+app.use("/api/tenants", protect, adminOnly, tenantRoutes);
 app.use("/api/calls", protect, adminOnly, callRoutes);        
-app.use("/api/dashboard", protect, adminOnly, dashboardRoutes); 
-app.use("/api/call-logs", protect, adminOnly, callLogRoutes);   
 
-app.use("/api/agent", protect, agentRoutes); 
-app.use("/api/contacts", protect, contactRoutes);
+// --- 404 CATCHER ---
+// This handles any requests to routes that don't exist
+app.use((req: Request, res: Response) => {
+  res.status(404).json({ message: `Route ${req.originalUrl} not found` });
+});
+
+// --- GLOBAL ERROR HANDLER ---
+// Must be the LAST middleware in the file
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+  console.error("🚨 Global Error Handler:", err.stack);
+  
+  const status = err.status || 500;
+  res.status(status).json({
+    success: false,
+    message: err.message || "Internal Server Error",
+    // Only show stack trace in development mode
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+  });
+});
 
 export default app;
