@@ -1,17 +1,22 @@
 import express from "express";
 import multer from "multer";
-import { importContactsText, importContactsExcel, getContactsList } from "../controllers/contact.controller";
+import { 
+  importContactsText, 
+  importContactsExcel, 
+  getContactsList,
+  downloadTemplate // <-- Add this
+} from "../controllers/contact.controller";
+import { protect } from "../middleware/authMiddleware"; // Ensure isolation
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-// TEXT import
-router.post("/import/text", importContactsText);
+// Add the Template Download Route
+router.get("/template", protect, downloadTemplate);
 
-// EXCEL import
-router.post("/import/excel", upload.single("file"), importContactsExcel);
-
-// GET contacts
-router.get("/", getContactsList);
+// Protected routes (Only see your own contacts)
+router.post("/import/text", protect, importContactsText);
+router.post("/import/excel", protect, upload.single("file"), importContactsExcel);
+router.get("/", protect, getContactsList);
 
 export default router;

@@ -1,13 +1,20 @@
 import express from "express";
-import { saveAgent, getAgents, simulateCall } from "../controllers/agent.controller";
-import { protect } from "../middleware/authMiddleware"; // Add this!
+import { saveAgent, getAgents, simulateCall, startCampaign } from "../controllers/agent.controller";
+import { protect } from "../middleware/authMiddleware";
 
 const router = express.Router();
 
-// This ensures only logged-in users with a token can touch these routes
+// Middleware to protect all routes below
 router.use(protect); 
 
-router.post("/", saveAgent);
-router.get("/", getAgents);
+// 1. Agent Management & Training
+router.post("/", saveAgent);      // Create or Update (Training)
+router.get("/", getAgents);       // List Agents assigned to Sub-user
+
+// 2. Campaign Execution
+router.post("/start-campaign", startCampaign); // Run campaign for queued contacts
+
+// 3. Testing/Simulation
 router.post("/simulate-call", simulateCall);
+
 export default router;

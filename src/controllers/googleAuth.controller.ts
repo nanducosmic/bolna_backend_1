@@ -10,38 +10,36 @@ const oauth2Client = new google.auth.OAuth2(
 );
 
 // Step 1: Redirect User to Google
-export const getAuthUrl = (req: any, res: Response) => {
-  const scopes = ['https://www.googleapis.com/auth/calendar.events'];
-  
-  const url = oauth2Client.generateAuthUrl({
-    access_type: 'offline', // CRITICAL: Gives us the refresh_token
-    prompt: 'consent',     // Forces Google to show the consent screen every time
-    scope: scopes,
-  });
 
+// Step 2: Handle Callback and Save Tokens
+// Step 1: Pass the tenant_id in the 'state' parameter
+export const getAuthUrl = (req: any, res: Response) => {
+  const url = oauth2Client.generateAuthUrl({
+    access_type: 'offline',
+    prompt: 'consent',
+    scope: ['https://www.googleapis.com/auth/calendar.events'],
+    state: req.user.tenant_id.toString() // <--- Encode the ID here
+  });
   res.json({ url });
 };
 
-// Step 2: Handle Callback and Save Tokens
+// Step 2: Retrieve the ID from the state
 export const googleCallback = async (req: any, res: Response) => {
-  const { code } = req.query;
+  const { code, state } = req.query; // 'state' is the tenant_id we passed above
 
   try {
-    // Exchange the authorization code for tokens
     const { tokens } = await oauth2Client.getToken(code as string);
 
-    // Save tokens to the Tenant model
-    await Tenant.findByIdAndUpdate(req.user.tenant_id, {
+    // Use 'state' instead of 'req.user' to find the tenant
+    await Tenant.findByIdAndUpdate(state, {
       "googleAuth.accessToken": tokens.access_token,
       "googleAuth.refreshToken": tokens.refresh_token,
       "googleAuth.expiryDate": tokens.expiry_date,
       isCalendarLinked: true
     });
 
-    // Redirect back to your frontend dashboard
-    res.redirect(`${process.env.FRONTEND_URL}/settings?calendar=success`);
+    res.redirect(`${process.env.FRONTEND_URL}/dashboard?calendar=success`);
   } catch (error) {
-    console.error("Google Auth Error:", error);
-    res.redirect(`${process.env.FRONTEND_URL}/settings?calendar=error`);
+    res.redirect(`${process.env.FRONTEND_URL}/dashboard?calendar=error`);
   }
 };

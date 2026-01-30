@@ -1,32 +1,47 @@
 import { Request, Response } from "express";
-import CallLog from "../models/CallLog";
+import Contact from "../models/Contact";
+import User from "../models/User";
+import Agent from "../models/Agent";
 
-/**
- * GET /api/dashboard/stats
- */
-export const getCallStats = async (_req: Request, res: Response) => {
-  const total = await CallLog.countDocuments();
-  const connected = await CallLog.countDocuments({ status: "connected" });
-  const notConnected = await CallLog.countDocuments({ status: "not_connected" });
-  const initiated = await CallLog.countDocuments({ status: "initiated" });
+export const getDashboardStats = async (req: any, res: Response) => {
+  try {
+    const tenant_id = req.user.tenant_id;
+    const isSuperAdmin = req.user.role === 'super_admin';
 
-  res.json({
-    total,
-    connected,
-    notConnected,
-    initiated,
-  });
-};
+    if (isSuperAdmin) {
+      // --- SUPER ADMIN SCOPE ---
+      const totalSubUsers = await User.countDocuments({ role: 'admin' });
+      const totalAgents = await Agent.countDocuments();
+      const recentContacts = await Contact.countDocuments(); // System-wide scale
 
-/**
- * POST /api/dashboard/seed
- */
-export const seedDemoCalls = async (_req: Request, res: Response) => {
-  await CallLog.insertMany([
-    { phone: "9999999991", status: "connected" },
-    { phone: "9999999992", status: "not_connected" },
-    { phone: "9999999993", status: "initiated" },
-  ]);
+      return res.json({
+        totalSubUsers,
+        totalAgents,
+        systemHealth: "Active",
+        role: "super_admin"
+      });
+    } else {
+      // --- SUB-USER (CLIENT) SCOPE ---
+      // Get counts for Successful vs Failed calls
+      const callStats = await Contact.aggregate([
+        { $match: { tenant_id } },
+        { $group: { _id: "$status", count: { $sum: 1 } } }
+      ]);
 
-  res.json({ message: "Demo call logs inserted" });
+      const formattedStats = {
+        total: callStats.reduce((acc, curr) => acc + curr.count, 0),
+        completed: callStats.find(s => s._id === 'completed')?.count || 0,
+        failed: callStats.find(s => s._id === 'failed')?.count || 0,
+        queued: callStats.find(s => s._id === 'queued')?.count || 0,
+      };
+
+      return res.json({
+        stats: formattedStats,
+        balance: req.user.balance || 0,
+        role: "admin"
+      });
+    }
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
 };
