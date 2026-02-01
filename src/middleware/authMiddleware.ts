@@ -1,15 +1,18 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User";
+import { Request, Response, NextFunction } from "express";
 
-export const protect = async (req: any, res: any, next: any) => {
+// Extend Express Request type locally if needed
+interface AuthRequest extends Request {
+  user?: any;
+}
+
+export const protect = async (req: AuthRequest, res: Response, next: NextFunction) => {
   let token;
 
   if (req.headers.authorization && req.headers.authorization.startsWith("Bearer")) {
     try {
-      // Extract token from "Bearer <token>"
       token = req.headers.authorization.split(" ")[1];
-
-      // Use ONLY the secret from .env
       const secret = process.env.JWT_SECRET;
       
       if (!secret) {
@@ -19,7 +22,7 @@ export const protect = async (req: any, res: any, next: any) => {
 
       const decoded: any = jwt.verify(token, secret);
 
-      // Attach user to request and ensure we get the role and tenant_id
+      // We ensure we get the role and tenant_id from the database
       req.user = await User.findById(decoded.id).select("-password");
 
       if (!req.user) {
@@ -29,7 +32,6 @@ export const protect = async (req: any, res: any, next: any) => {
       next();
     } catch (error: any) {
       console.error("JWT Verification Error:", error.message);
-      // This will catch the "malformed" error if the token string is broken
       return res.status(401).json({ message: `Not authorized: ${error.message}` });
     }
   }
@@ -40,13 +42,29 @@ export const protect = async (req: any, res: any, next: any) => {
 };
 
 /**
- * Combined Admin Check
- * Allows both 'super_admin' (Platform Owner) and 'admin' (Tenant Owner)
+ * SCOPE: Super Admin Only
+ * Used for: Assigning credits, Managing Sub-users, Global Results
  */
-export const adminOnly = (req: any, res: any, next: any) => {
-  if (req.user && (req.user.role === "super_admin" || req.user.role === "admin")) {
+export const superAdminOnly = (req: AuthRequest, res: Response, next: NextFunction) => {
+  if (req.user && req.user.role === "super_admin") {
     next();
   } else {
-    res.status(403).json({ message: `Access denied: ${req.user?.role} is not an admin` });
+    res.status(403).json({ 
+      message: `Access denied: Role '${req.user?.role}' does not have Super Admin privileges.` 
+    });
+  }
+};
+
+/**
+ * SCOPE: Sub-User (Client Admin) Only
+ * Used for: Contact Base, Training AI, Running Campaigns
+ */
+export const clientAdminOnly = (req: AuthRequest, res: Response, next: NextFunction) => {
+  if (req.user && req.user.role === "admin") {
+    next();
+  } else {
+    res.status(403).json({ 
+      message: "Access denied: This area is reserved for Client Administrators." 
+    });
   }
 };

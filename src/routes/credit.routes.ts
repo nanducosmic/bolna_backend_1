@@ -1,12 +1,12 @@
 // D:\server\src\routes\credit.routes.ts
 import express from "express";
 import { rechargeWallet, getBalance } from "../controllers/creditController";
-import { protect, adminOnly } from "../middleware/authMiddleware";
+import { protect, superAdminOnly } from "../middleware/authMiddleware";
 
 const router = express.Router();
 
 // 1. Existing: Only Super Admin can add money
-router.post("/recharge", protect, adminOnly, rechargeWallet);
+router.post("/recharge", protect, superAdminOnly, rechargeWallet);
 
 // 2. Existing: Anyone logged in can check their own balance
 router.get("/balance", protect, getBalance);

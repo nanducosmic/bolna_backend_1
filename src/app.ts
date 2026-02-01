@@ -3,7 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 
 // Middleware Imports
-import { protect, adminOnly } from "./middleware/authMiddleware";
+import { protect, superAdminOnly } from "./middleware/authMiddleware";
 
 // Route Imports
 import authRoutes from "./routes/authRoutes";
@@ -18,6 +18,8 @@ import campaignRoutes from "./routes/campaign.routes";
 import googleRoutes from "./routes/google.routes";
 import webhookRoutes from "./routes/webhook.routes"; 
 import knowledgeBaseRoutes from "./routes/knowledgeBase.routes"; 
+import adminRoutes from "./routes/admin.routes";
+import agenda from "./config/agenda";
 
 // Service Imports
 import { getAutomationStatus } from "./services/automationEngine";
@@ -49,7 +51,7 @@ app.use("/api/knowledge-base", protect, knowledgeBaseRoutes);
 
 
 app.use("/api/dashboard", protect,  dashboardRoutes); 
-app.use("/api/call-logs", protect, adminOnly, callLogRoutes);   
+app.use("/api/call-logs", protect, superAdminOnly, callLogRoutes);   
 
 // Dashboard System Status
 app.get("/api/system-status", protect, async (req: Request, res: Response, next: NextFunction) => {
@@ -65,8 +67,9 @@ app.get("/api/system-status", protect, async (req: Request, res: Response, next:
 });
 
 // --- ADMIN ONLY ROUTES ---
-app.use("/api/tenants", protect, adminOnly, tenantRoutes);
-app.use("/api/calls", protect, adminOnly, callRoutes);        
+app.use("/api/admin", protect, superAdminOnly, adminRoutes);
+app.use("/api/tenants", protect, superAdminOnly, tenantRoutes);
+app.use("/api/calls", protect, superAdminOnly, callRoutes);        
 
 // --- 404 CATCHER ---
 // This handles any requests to routes that don't exist

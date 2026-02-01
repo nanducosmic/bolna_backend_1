@@ -3,40 +3,62 @@ import agenda from "../config/agenda";
 import Campaign from "../models/Campaign";
 import Contact from "../models/Contact";
 
+// 1. SCOPE: Set Campaigns -> Select DB, Agent, and Time
+export const createCampaign = async (req: any, res: Response) => {
+  try {
+    const { title, agent_id, list_id, scheduledAt } = req.body;
+    const tenant_id = req.user.tenant_id;
+
+    const totalContacts = await Contact.countDocuments({ list_id, tenant_id });
+
+    const campaign = await Campaign.create({
+      tenant_id,
+      agent_id,
+      list_id,
+      title,
+      scheduledAt: new Date(scheduledAt),
+      status: "scheduled",
+      stats: { totalContacts, processed: 0, successful: 0, failed: 0 }
+    });
+
+    // Automatically schedule the 'startCampaign' logic using Agenda at the specific time
+    await agenda.schedule(new Date(scheduledAt), "start-full-campaign", { 
+      campaignId: campaign._id,
+      tenant_id 
+    });
+
+    res.status(201).json({ success: true, data: campaign });
+  } catch (error: any) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+};
+
+// 2. SCOPE: Run Campaign (Your existing logic refined)
 export const startCampaign = async (req: any, res: Response) => {
   try {
     const { campaignId } = req.body;
-    const tenant_id = req.user.tenant_id; // From your Auth middleware
+    const tenant_id = req.user.tenant_id;
 
-    // 1. Find the campaign
     const campaign = await Campaign.findOne({ _id: campaignId, tenant_id }).populate("agent_id");
     if (!campaign) return res.status(404).json({ message: "Campaign not found" });
 
-    // 2. Get all pending contacts for this campaign's list
     const contacts = await Contact.find({ list_id: campaign.list_id, tenant_id });
 
-    // 3. Queue the calls
-    // We space them out by 10 seconds so your API doesn't get banned for spamming
+    // Spacing out calls to protect rate limits
     for (let i = 0; i < contacts.length; i++) {
       const contact = contacts[i];
-      
       await agenda.schedule(`in ${i * 10} seconds`, "execute-campaign-call", {
         contactId: contact._id,
-        bolnaAgentId: (campaign.agent_id as any).bolna_agent_id,
+        bolnaAgentId: (campaign.agent_id as any).bolnaAgentId, // Matches your Agent model
         tenantId: tenant_id,
         campaignId: campaign._id
       });
     }
 
-    // 4. Update Campaign Status
     campaign.status = "running";
     await campaign.save();
 
-    res.json({ 
-      message: `Campaign started! ${contacts.length} calls are now in the queue.`,
-      checkStatusAt: "/api/campaigns/status/" + campaignId 
-    });
-
+    res.json({ message: `Campaign ignited with ${contacts.length} calls queued.` });
   } catch (error: any) {
     res.status(500).json({ message: "Failed to ignite campaign", error: error.message });
   }
