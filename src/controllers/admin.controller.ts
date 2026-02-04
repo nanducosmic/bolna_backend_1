@@ -1,9 +1,31 @@
 import { Request, Response } from 'express';
-import User from '../models/User'; 
+import User from '../models/User';
 import Tenant from '../models/Tenant';
 import Campaign from '../models/Campaign';
-import CreditTransaction from '../models/CreditTransaction'; 
-import CallLog from '../models/CallLog'; // Ensure you have this model
+import CreditTransaction from '../models/CreditTransaction';
+import CallLog from '../models/CallLog';
+import mongoose from 'mongoose';
+
+// 6. SCOPE: Super Admin -> Toggle User Status
+export const toggleUserStatus = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(String(id))) {
+      return res.status(400).json({ message: "Invalid user id" });
+    }
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    if (!user.tenant_id) {
+      return res.status(400).json({ message: "User is missing tenant_id" });
+    }
+    user.isActive = !user.isActive;
+    await user.save();
+    return res.json(user);
+  } catch (error: any) {
+    console.error("toggleUserStatus error:", error);
+    res.status(500).json({ message: "Failed to toggle status", error: error.message });
+  }
+};
 
 // 1. SCOPE: Super Admin -> Assign the credits
 export const assignCreditsToUser = async (req: Request, res: Response) => {
@@ -89,15 +111,60 @@ export const updateUserBalance = async (req: Request, res: Response) => {
   const { id } = req.params;
   const { balance } = req.body;
 
-  try {
-    const user = await User.findById(id);
-    if (!user) return res.status(404).json({ message: "User not found" });
+  // 1. Validate the ID format
+  if (!mongoose.Types.ObjectId.isValid(String(id))) {
+    return res.status(400).json({ message: "Invalid user id" });
+  }
 
+  try {
+    // 2. Use findById (which automatically looks for _id) 
+    // We removed the 'tenant_id' filter so the Super Admin can reach anyone.
+    const user = await User.findById(id);
+
+    // 3. Check if user exists
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // 4. Update and Save
     user.balance = balance;
     await user.save();
 
+    // 5. Success response
     res.json({ success: true, newBalance: user.balance });
   } catch (error: any) {
+    console.error("updateUserBalance error:", error);
     res.status(500).json({ message: "Failed to update balance", error: error.message });
+  }
+};
+// One-time migration: Assign default tenant_id and balance to users missing them
+
+export async function migrateUsersAssignTenantAndBalance() {
+  const DEFAULT_TENANT_ID = '697e57452f0b268f85262273';
+  try {
+    const result = await User.updateMany(
+      { $or: [{ tenant_id: { $exists: false } }, { balance: { $exists: false } }] },
+      { $set: { tenant_id: DEFAULT_TENANT_ID, balance: 0 } }
+    );
+    console.log('Migration result:', result);
+    return result;
+  } catch (error) {
+    console.error('Migration error:', error);
+    throw error;
+  }
+}
+
+export const updateUserTenant = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params; // The User's ID
+    const { tenant_id } = req.body; // The New Tenant ID
+
+    const user = await User.findByIdAndUpdate(id, { tenant_id }, { new: true });
+    
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+    res.status(200).json({ success: true, message: "Tenant assigned successfully", data: user });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };

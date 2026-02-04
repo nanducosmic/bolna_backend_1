@@ -16,7 +16,7 @@ export interface IAgent extends Document {
 const AgentSchema = new Schema<IAgent>({
   name: { type: String, required: true },
   prompt: { type: String, required: true },
-  bolnaAgentId: { type: String, required: true },
+  bolnaAgentId: { type: String, required: false },
   bolna_rag_id: { type: String }, 
   negative_prompts: { type: String },
   cta: { type: String },

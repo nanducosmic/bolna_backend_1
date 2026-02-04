@@ -68,3 +68,16 @@ export const clientAdminOnly = (req: AuthRequest, res: Response, next: NextFunct
     });
   }
 };
+
+// Role-based authorization middleware
+export const authorize = (...roles: string[]) => {
+  return (req: AuthRequest, res: Response, next: NextFunction) => {
+    if (req.user && roles.includes(req.user.role)) {
+      next();
+    } else {
+      res.status(403).json({
+        message: `Access denied: Role '${req.user?.role}' does not have required privileges.`
+      });
+    }
+  };
+};

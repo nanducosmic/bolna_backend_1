@@ -73,18 +73,33 @@ export const getFullHistory = async (req: Request, res: Response) => {
     const limit = parseInt(req.query.limit as string) || 20;
     const skip = (page - 1) * limit;
 
-    // 2. Fetch data, total count, and GRAND TOTAL cost in parallel
-    const [history, totalCalls, totalCostData] = await Promise.all([
-      CallLog.find()
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit),
-      CallLog.countDocuments(),
-      // This sums the 'cost' field for every document in the collection
-      CallLog.aggregate([
-        { $group: { _id: null, totalBurn: { $sum: "$cost" } } }
-      ])
-    ]);
+
+    // Only show logs for the current tenant unless super_admin
+    const user = (req as any).user;
+    let match = {};
+    if (user?.role === "admin" && user?.tenant_id) {
+      match = { tenant_id: user.tenant_id };
+    }
+
+    // If agentId is a ref, populate its name
+    let history = [];
+    let totalCalls = 0;
+    let totalCostData = [];
+    try {
+      [history, totalCalls, totalCostData] = await Promise.all([
+        CallLog.find(match)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit),
+        CallLog.countDocuments(match),
+        CallLog.aggregate([
+          { $match: match },
+          { $group: { _id: null, totalBurn: { $sum: "$cost" } } }
+        ])
+      ]);
+    } catch (err: any) {
+      return res.status(500).json({ message: "Error fetching call logs", error: err?.message || String(err) });
+    }
 
     // 3. Extract the grand total number
     const grandTotalBurn = totalCostData.length > 0 ? totalCostData[0].totalBurn : 0;

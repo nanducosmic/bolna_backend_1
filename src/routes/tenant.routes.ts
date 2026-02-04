@@ -1,6 +1,7 @@
 // D:\server\src\routes\tenant.routes.ts
 import express from "express";
 import { createTenant, getAllTenants } from "../controllers/tenantController"; // 1. Add getAllTenants
+import { updateConfig, addCredits } from "../controllers/tenant.controller";
 import { protect, superAdminOnly} from "../middleware/authMiddleware";
 
 const router = express.Router();
@@ -27,3 +28,9 @@ router.get("/", protect, superAdminOnly, async (req, res) => {
 });
 
 export default router;
+// PATCH /api/tenants/:id/config - update tenant config (bolnaAgentIds, assignedPhoneNumber)
+router.patch("/:id/config", protect, updateConfig);
+
+// POST/PATCH /api/tenants/:id/credits - assign credits to tenant
+router.post("/:id/credits", protect, addCredits);
+router.patch("/:id/credits", protect, addCredits);

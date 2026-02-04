@@ -8,28 +8,53 @@ if (!BOLNA_API_KEY || !MALE_AGENT_ID || !FEMALE_AGENT_ID) {
   throw new Error("Required Bolna Environment Variables are missing in .env");
 }
 
+
+import Tenant from "../models/Tenant";
+
 export const createBolnaCall = async (
   phone: string,
   prompt: string,
-  gender: string = "male"
+  gender: string = "male",
+  tenant_id: string
 ) => {
   try {
-    // 1. Format the phone number
     const formattedPhone = phone.startsWith("+") ? phone : `+91${phone}`;
-    
-    // 2. Select the correct Agent ID based on the gender passed from the frontend
-    const selectedAgentId = gender.toLowerCase() === "male" ? MALE_AGENT_ID : FEMALE_AGENT_ID;
 
-    console.log(`🚀 Triggering ${gender} call using Agent ID: ${selectedAgentId}`);
+    // Fetch tenant config for agent selection
+    const tenant = await Tenant.findById(tenant_id);
+    if (!tenant) throw new Error("Tenant not found");
 
-    // 3. Make the API request
+    // Use tenant.bolnaConfig for agent selection
+    let selectedAgentId = undefined;
+    if (tenant.bolnaConfig) {
+      if (gender === "male" && tenant.bolnaConfig.maleAgentId) {
+        selectedAgentId = tenant.bolnaConfig.maleAgentId;
+      } else if (gender === "female" && tenant.bolnaConfig.femaleAgentId) {
+        selectedAgentId = tenant.bolnaConfig.femaleAgentId;
+      }
+    }
+    // Fallback to env if not found in tenant config
+    if (!selectedAgentId) {
+      selectedAgentId = gender.toLowerCase() === "male" ? MALE_AGENT_ID : FEMALE_AGENT_ID;
+    }
+
+    // Validate selectedAgentId is a UUID (v4)
+    const uuidV4Regex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!selectedAgentId || typeof selectedAgentId !== "string" || !selectedAgentId.match(/^[0-9a-fA-F-]{36}$/)) {
+      console.error(`❌ Invalid Agent ID configuration: '${selectedAgentId}' for gender '${gender}' and tenant '${tenant_id}'`);
+      throw new Error(`Invalid Agent ID configuration for gender '${gender}'. Please check tenant config and environment variables.`);
+    }
+
+    console.log(`🚀 Triggering ${gender} call for tenant ${tenant_id} using Agent ID: ${selectedAgentId}`);
+
     const response = await axios.post(
       "https://api.bolna.ai/call",
       {
         agent_id: selectedAgentId,
         recipient_phone_number: formattedPhone,
         user_data: {
-          prompt: prompt
+          prompt: prompt,
+          tenant_id: tenant_id
         }
       },
       {

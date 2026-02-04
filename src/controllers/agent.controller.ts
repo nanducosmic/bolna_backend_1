@@ -12,16 +12,30 @@ export const saveAgent = async (req: any, res: Response) => {
     const { name, prompt, bolnaAgentId, bolna_rag_id } = req.body;
     const tenant_id = req.user.tenant_id;
 
-    if (!name || !prompt || !bolnaAgentId) {
-      return res.status(400).json({ message: "Name, prompt, and bolnaAgentId are required" });
+    // Only require name and prompt
+    if (!name || !prompt || !tenant_id) {
+      return res.status(400).json({ message: "Name, prompt, and tenant_id are required" });
     }
 
     // Upsert logic: If agent exists for this tenant, update it (Training), otherwise create.
-    const agent = await Agent.findOneAndUpdate(
-      { name, tenant_id }, 
-      { name, prompt, bolnaAgentId, bolna_rag_id, tenant_id },
-      { upsert: true, new: true }
-    );
+    let agent = await Agent.findOne({ tenant_id });
+    if (agent) {
+      agent.name = name;
+      agent.prompt = prompt;
+      if (bolnaAgentId) agent.bolnaAgentId = bolnaAgentId;
+      if (bolna_rag_id) agent.bolna_rag_id = bolna_rag_id;
+      await agent.save();
+    } else {
+      agent = await Agent.create({
+        name,
+        prompt,
+        tenant_id,
+        bolnaAgentId,
+        bolna_rag_id,
+        status: "active",
+        type: "outbound"
+      });
+    }
 
     res.json({
       message: "AI Agent/Training saved successfully",

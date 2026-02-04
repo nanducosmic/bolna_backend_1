@@ -10,6 +10,9 @@ export interface ICallLog extends Document {
   summary?: string;
   duration?: number;
   gender?: "male" | "female"; 
+  tenant_id?: mongoose.Types.ObjectId;
+  source?: "user" | "tenant";
+  agentName?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -51,6 +54,19 @@ const callLogSchema = new Schema<ICallLog>(
       type: String,
       enum: ["male", "female"],
       default: "male" 
+    },
+    tenant_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Tenant"
+    },
+    source: {
+      type: String,
+      enum: ["user", "tenant"],
+      default: "tenant"
+    },
+    agentName: {
+      type: String,
+      default: "Unknown Agent"
     }
   },
   { timestamps: true }

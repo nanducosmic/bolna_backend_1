@@ -1,3 +1,41 @@
+
+export const saveKnowledgeBase = async (req: any, res: Response) => {
+  try {
+    const tenant_id = req.user?.tenant_id;
+    let { name, prompt, bolnaAgentId } = req.body;
+
+    // Validation and defaults
+    if (!prompt || !bolnaAgentId) {
+      return res.status(400).json({ message: "Both prompt and bolnaAgentId are required." });
+    }
+    if (!name) name = "Main Knowledge Base";
+    if (!tenant_id) {
+      return res.status(400).json({ message: "Missing tenant_id in request." });
+    }
+
+    // Save the KB prompt as a new Agent (or update if exists)
+    let agent = await Agent.findOne({ bolnaAgentId, tenant_id });
+    if (!agent) {
+      agent = await Agent.create({
+        name,
+        prompt,
+        bolnaAgentId,
+        tenant_id,
+        status: "active",
+        type: "outbound"
+      });
+    } else {
+      agent.name = name;
+      agent.prompt = prompt;
+      await agent.save();
+    }
+
+    res.json({ success: true, agent });
+  } catch (error: any) {
+    console.error("KB Save Error:", error.message);
+    res.status(500).json({ message: "Failed to save Knowledge Base prompt" });
+  }
+};
 import { Request, Response } from "express";
 import axios from "axios";
 import fs from "fs";

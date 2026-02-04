@@ -23,6 +23,7 @@ import agenda from "./config/agenda";
 
 // Service Imports
 import { getAutomationStatus } from "./services/automationEngine";
+import Contact from "./models/Contact";
 
 dotenv.config();
 
@@ -51,7 +52,7 @@ app.use("/api/knowledge-base", protect, knowledgeBaseRoutes);
 
 
 app.use("/api/dashboard", protect,  dashboardRoutes); 
-app.use("/api/call-logs", protect, superAdminOnly, callLogRoutes);   
+app.use("/api/call-logs", protect, callLogRoutes);   
 
 // Dashboard System Status
 app.get("/api/system-status", protect, async (req: Request, res: Response, next: NextFunction) => {
@@ -69,7 +70,8 @@ app.get("/api/system-status", protect, async (req: Request, res: Response, next:
 // --- ADMIN ONLY ROUTES ---
 app.use("/api/admin", protect, superAdminOnly, adminRoutes);
 app.use("/api/tenants", protect, superAdminOnly, tenantRoutes);
-app.use("/api/calls", protect, superAdminOnly, callRoutes);        
+// Allow both admin and super_admin for /api/calls
+app.use("/api/calls", protect, callRoutes);        
 
 // --- 404 CATCHER ---
 // This handles any requests to routes that don't exist
@@ -89,6 +91,25 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
     // Only show stack trace in development mode
     stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
   });
+});
+
+
+// DELETE THIS AFTER USE!
+app.get('/api/debug/clear-contacts', async (req, res) => {
+  try {
+    const result = await Contact.deleteMany({});
+    res.json({ message: "Success", deletedCount: result.deletedCount });
+  } catch (err) {
+    let message = "Unknown error";
+    if (err instanceof Error) {
+      message = err.message;
+    } else if (typeof err === 'object' && err && 'message' in err) {
+      message = (err as any).message;
+    } else if (typeof err === 'string') {
+      message = err;
+    }
+    res.status(500).json({ error: message });
+  }
 });
 
 export default app;

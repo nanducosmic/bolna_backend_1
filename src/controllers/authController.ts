@@ -14,18 +14,22 @@ const generateToken = (id: string, role: string, tenant_id: string) => {
 // @desc    Register new user & Create Tenant
 // @route   POST /api/auth/register
 export const registerUser = async (req: Request, res: Response) => {
-  const { name, email, password, role, tenant_name } = req.body;
+  const { name, email, password, role, tenant_name, tenant_id } = req.body;
 
   try {
     const userExists = await User.findOne({ email });
     if (userExists) return res.status(400).json({ message: "User already exists" });
 
-    // 1. Create a new Tenant for the Sub-user (Client)
-    // Scope: "Sub users - Clients" need their own isolated space
-    const newTenant = await Tenant.create({
-      name: tenant_name || `${name}'s Org`,
-      balance: 0 // Default credits
-    });
+    let assignedTenantId = tenant_id;
+    if (!assignedTenantId) {
+      // 1. Create a new Tenant for the Sub-user (Client)
+      // Scope: "Sub users - Clients" need their own isolated space
+      const newTenant = await Tenant.create({
+        name: tenant_name || `${name}'s Org`,
+        balance: 0 // Default credits
+      });
+      assignedTenantId = newTenant._id;
+    }
 
     // 2. Hash password
     const salt = await bcrypt.genSalt(10);
@@ -37,7 +41,8 @@ export const registerUser = async (req: Request, res: Response) => {
       email,
       password: hashedPassword,
       role: role || "admin", // Default to admin (client)
-      tenant_id: newTenant._id,
+      tenant_id: assignedTenantId,
+      balance: 0
     });
 
     res.status(201).json({

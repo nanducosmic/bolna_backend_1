@@ -1,5 +1,11 @@
 import mongoose, { Schema, Document } from "mongoose";
 
+export interface IPrompt {
+  name: string;
+  text: string;
+  gender: "male" | "female";
+}
+
 export interface ITenant extends Document {
   name: string;
   balance: number;
@@ -15,34 +21,58 @@ export interface ITenant extends Document {
   isCalendarLinked: boolean;
   // SCOPE: Intervals and conditions for booking
   bookingSettings: {
-    workingDays: number[]; // e.g., [1, 2, 3, 4, 5] for Mon-Fri
-    startHour: number;     // e.g., 9 (9 AM)
-    endHour: number;       // e.g., 17 (5 PM)
-    slotDuration: number;  // e.g., 30 (minutes)
+    workingDays: number[];
+    startHour: number;
+    endHour: number;
+    slotDuration: number;
     timezone: string;
   };
+  // NEW: Structured Bolna Config for Multi-Tenancy
+  bolnaConfig: {
+    maleAgentId?: string;
+    femaleAgentId?: string;
+  };
+  // NEW: Library of prompts for this tenant
+  prompts: IPrompt[];
+  assignedPhoneNumber?: string;
 }
 
-const TenantSchema = new Schema<ITenant>({
-  name: { type: String, required: true },
-  balance: { type: Number, default: 0 },
-  status: { type: String, enum: ["active", "inactive"], default: "active" },
-  assignedNumber: { type: String },
-  googleAuth: {
-    accessToken: { type: String },
-    refreshToken: { type: String },
-    expiryDate: { type: Number },
-    calendarId: { type: String, default: "primary" }
+const TenantSchema = new Schema<ITenant>(
+  {
+    name: { type: String, required: true },
+    balance: { type: Number, default: 0 },
+    status: { type: String, enum: ["active", "inactive"], default: "active" },
+    assignedNumber: { type: String },
+    googleAuth: {
+      accessToken: { type: String },
+      refreshToken: { type: String },
+      expiryDate: { type: Number },
+      calendarId: { type: String, default: "primary" },
+    },
+    isCalendarLinked: { type: Boolean, default: false },
+    bookingSettings: {
+      workingDays: { type: [Number], default: [1, 2, 3, 4, 5] },
+      startHour: { type: Number, default: 9 },
+      endHour: { type: Number, default: 17 },
+      slotDuration: { type: Number, default: 30 },
+      timezone: { type: String, default: "UTC" },
+    },
+    // Updated Bolna Config
+    bolnaConfig: {
+      maleAgentId: { type: String },
+      femaleAgentId: { type: String },
+    },
+    // Array of reusable prompts
+    prompts: [
+      {
+        name: { type: String, required: true },
+        text: { type: String, required: true },
+        gender: { type: String, enum: ["male", "female"], required: true },
+      },
+    ],
+    assignedPhoneNumber: { type: String },
   },
-  isCalendarLinked: { type: Boolean, default: false },
-  // Default conditions for the AI booking agent
-  bookingSettings: {
-    workingDays: { type: [Number], default: [1, 2, 3, 4, 5] },
-    startHour: { type: Number, default: 9 },
-    endHour: { type: Number, default: 17 },
-    slotDuration: { type: Number, default: 30 },
-    timezone: { type: String, default: "UTC" }
-  }
-}, { timestamps: true });
+  { timestamps: true }
+);
 
 export default mongoose.model<ITenant>("Tenant", TenantSchema);
