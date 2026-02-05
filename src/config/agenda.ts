@@ -6,6 +6,7 @@ import Campaign from "../models/Campaign";
 
 const mongoConnectionString = process.env.MONGO_URI || "mongodb://127.0.0.1/your-db";
 
+// @ts-ignore
 const agenda = new Agenda({
   db: { 
     address: mongoConnectionString, 
