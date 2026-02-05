@@ -2,7 +2,7 @@ import agenda from "../config/agenda";
 import Contact from "../models/Contact";
 import axios from "axios";
 
-agenda.define("execute-campaign-call", async (job) => {
+agenda.define("execute-campaign-call", async (job: any) => {
   const { contactId, agentId, bolnaAgentId, tenantId } = job.attrs.data;
 
   try {
