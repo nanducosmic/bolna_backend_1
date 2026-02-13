@@ -36,8 +36,7 @@ const callLogSchema = new Schema<ICallLog>(
     },
     bolnaCallId: { 
       type: String,
-      required: true,
-      unique: true
+      required: true
     },
     transcript: { 
       type: String, 

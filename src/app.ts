@@ -32,13 +32,27 @@ dotenv.config();
 const app = express();
 
 // --- GLOBAL MIDDLEWARE ---
-app.use(cors({
-  origin: 'http://localhost:5174',
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID'],
-  credentials: true
-}));
-app.use(express.json());
 
+// Update this in your app.ts
+const allowedOrigins = [
+  'http://localhost:5173', 
+  'http://localhost:5174', 
+  'https://app.voaiz.com', 
+  'https://demo.voaiz.com',
+  'https://mellifluous-belekoy-40fab9.netlify.app' // Keep this as a backup
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('CORS Error: Origin not allowed'));
+    }
+  },
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID']
+}));
 // --- PUBLIC ROUTES ---
 app.use("/api/auth", authRoutes);
 app.use("/api/webhooks", webhookRoutes); // Public access for Bolna callbacks

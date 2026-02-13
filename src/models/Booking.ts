@@ -27,8 +27,7 @@ const bookingSchema = new Schema<IBooking>(
     },
     event_id: {
       type: String,
-      required: true,
-      unique: true // One booking per Google Calendar event
+      required: true
     },
     event_link: {
       type: String,
