@@ -15,18 +15,32 @@ const generateToken = (id: string, role: string, tenant_id: string) => {
 // @route   POST /api/auth/register
 export const registerUser = async (req: Request, res: Response) => {
   const { name, email, password, role, tenant_name, tenant_id } = req.body;
+  const currentUser = (req as any).user;
 
   try {
     const userExists = await User.findOne({ email });
     if (userExists) return res.status(400).json({ message: "User already exists" });
 
     let assignedTenantId = tenant_id;
-    if (!assignedTenantId) {
-      // 1. Create a new Tenant for the Sub-user (Client)
-      // Scope: "Sub users - Clients" need their own isolated space
+
+    // --- TENANT ENFORCEMENT ---
+    if (currentUser) {
+      if (currentUser.role === "admin") {
+        // Client Admins can ONLY create users for their own tenant
+        assignedTenantId = currentUser.tenant_id;
+      } else if (currentUser.role === "super_admin") {
+        // Super Admins can assign any tenant, but must provide one if role is admin/user
+        if ((role === "admin" || role === "user") && !assignedTenantId) {
+          return res.status(400).json({ message: "Tenant ID is required for admin/user roles" });
+        }
+      }
+    }
+
+    if (!assignedTenantId && !currentUser) {
+      // Public registration (default behavior for first-time signups)
       const newTenant = await Tenant.create({
         name: tenant_name || `${name}'s Org`,
-        balance: 0 // Default credits
+        balance: 0 
       });
       assignedTenantId = newTenant._id;
     }
@@ -40,7 +54,7 @@ export const registerUser = async (req: Request, res: Response) => {
       name,
       email,
       password: hashedPassword,
-      role: role || "admin", // Default to admin (client)
+      role: role || "admin",
       tenant_id: assignedTenantId,
       balance: 0
     });

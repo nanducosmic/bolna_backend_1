@@ -4,12 +4,17 @@ import {
   getAdminStats,
   getAllSubUsers,
   updateUserBalance,
-  updateUserTenant
+  updateUserTenant,
+  getTenantUsers
 } from "../controllers/admin.controller";
-import { protect, superAdminOnly } from "../middleware/authMiddleware";
+import { protect, superAdminOnly, isTenantMember } from "../middleware/authMiddleware";
 
 const router = Router();
 
+// --- TENANT-SPECIFIC USER ROUTES ---
+router.get("/users", protect, isTenantMember, getTenantUsers);
+
+// --- SUPER ADMIN ONLY ROUTES ---
 // Assign credits to a tenant
 router.post("/assign-credits", protect, superAdminOnly, assignCreditsToUser);
 

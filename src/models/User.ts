@@ -70,12 +70,22 @@ export interface IUser extends Document {
   email: string;
   password: string;
   tenant_id: mongoose.Types.ObjectId;
-  role: "super_admin" | "admin";
+  role: "super_admin" | "admin" | "user";
   balance: number;
   status: "active" | "inactive";
   isActive?: boolean;
   createdAt: Date;
   prompts?: IUserPrompt[];
+
+  isCalendarLinked?: boolean;
+  googleAuth?: {
+    accessToken?: string;
+    refreshToken?: string;
+    expiryDate?: number;
+    email?: string;
+    calendarId?: string;
+  };
+  
 }
 
 
@@ -86,11 +96,13 @@ const userSchema = new Schema<IUser>({
   tenant_id: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: "Tenant", 
-    required: true 
+    required: function(this: IUser) {
+      return this.role === "admin" || this.role === "user";
+    }
   },
   role: { 
     type: String, 
-    enum: ["super_admin", "admin"], 
+    enum: ["super_admin", "admin", "user"], 
     default: "admin" 
   },
   balance: { 
@@ -113,7 +125,17 @@ const userSchema = new Schema<IUser>({
       text: { type: String, required: true },
       gender: { type: String, required: true }
     }
-  ]
+  ],
+
+
+  isCalendarLinked: { type: Boolean, default: false },
+  googleAuth: {
+    accessToken: { type: String },
+    refreshToken: { type: String },
+    expiryDate: { type: Number },
+    email: { type: String },
+    calendarId: { type: String }
+  }
 });
 
 export default mongoose.model<IUser>("User", userSchema);

@@ -7,7 +7,7 @@ const creditSchema = new mongoose.Schema({
     required: true,
     unique: true // One wallet per company
   },
-  balance: { type: Number, default: 0 },
+  balance: { type: Number, default: 0 }, // Using Number for floating point precision (Direct Pass-through)
   updatedAt: { type: Date, default: Date.now }
 });
 

@@ -1,7 +1,7 @@
 import { Response } from "express";
 import Agent from "../models/Agent";
 import Contact from "../models/Contact"; // Added for Campaign logic
-import { deductCredits } from "../services/creditService";
+import { deductCredits, hasMinimumBalance } from "../services/creditService";
 
 /**
  * Create or update AI agent + Train Agent (Prompting)
@@ -53,7 +53,14 @@ export const saveAgent = async (req: any, res: Response) => {
 export const getAgents = async (req: any, res: Response) => {
   try {
     const tenant_id = req.user.tenant_id;
-    const agents = await Agent.find({ tenant_id });
+    const filter: any = {};
+    
+    // Non-super_admins only see their own agents
+    if (req.user.role !== "super_admin") {
+      filter.tenant_id = tenant_id;
+    }
+    
+    const agents = await Agent.find(filter);
     res.json(agents);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -68,6 +75,15 @@ export const startCampaign = async (req: any, res: Response) => {
   try {
     const tenant_id = req.user.tenant_id;
     const { agentId } = req.body; // Sub-user selects the agent
+
+    // 0. Credit Gatekeeper (Threshold for campaign start)
+    const canStart = await hasMinimumBalance(tenant_id, 150); // Threshold for 10 calls
+    if (!canStart) {
+      return res.status(402).json({
+        success: false,
+        message: "Insufficient credits to start campaign. Minimum 150 credits required."
+      });
+    }
 
     // 1. Get Agent & Queued Contacts
     const agent = await Agent.findOne({ _id: agentId, tenant_id });

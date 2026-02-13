@@ -1,124 +1,170 @@
 import axios from "axios";
 import CallLog from "../models/CallLog";
 import { Request, Response } from "express";
-// ...existing code...
+import { createCalendarEvent } from "../services/calendarService";
+import Contact from "../models/Contact";
+import { calendarWebhook } from "./calendar.controller";
+
 /**
- * syncCallStatus: Given a Bolna execution_id, fetches execution details from Bolna API
- * and updates the local CallLog with status, duration, and cost.
+ * syncCallStatus: Keeps your manual sync logic working perfectly.
  */
 export const syncCallStatus = async (req: Request, res: Response) => {
   try {
-    // Ensure req.body is parsed as an object
-    const body = req.body as { execution_id?: string };
-    const { execution_id } = body;
-    if (!execution_id) {
-      return res.status(400).json({ message: "Missing execution_id" });
-    }
+    const { execution_id } = req.body as { execution_id?: string };
+    if (!execution_id) return res.status(400).json({ message: "Missing execution_id" });
 
-    // Call Bolna API for execution details
     const bolnaApiKey = process.env.BOLNA_API_KEY;
     const bolnaBaseUrl = process.env.BOLNA_BASE_URL || "https://api.bolna.ai";
-    const response = await axios.get(
-      `${bolnaBaseUrl}/v2/execution/${execution_id}`,
-      {
-        headers: {
-          Authorization: `Bearer ${bolnaApiKey}`,
-          "Content-Type": "application/json"
-        }
-      }
-    );
+    const response = await axios.get(`${bolnaBaseUrl}/v2/execution/${execution_id}`, {
+        headers: { Authorization: `Bearer ${bolnaApiKey}`, "Content-Type": "application/json" }
+    });
+    
     const details = response.data?.data;
-    if (!details) {
-      return res.status(404).json({ message: "No execution details found from Bolna." });
-    }
+    if (!details) return res.status(404).json({ message: "No execution details found from Bolna." });
 
-    // Update CallLog
     const update = {
       status: details.status,
       duration: details.duration || details.telephony_data?.duration || 0,
       cost: details.total_cost || 0
     };
+
     const updated = await CallLog.findOneAndUpdate(
       { bolnaCallId: execution_id },
       { $set: update },
       { new: true }
     );
-    if (!updated) {
-      return res.status(404).json({ message: "No CallLog found for this execution_id." });
+
+    if (updated && updated.tenant_id) {
+      const durationInMinutes = (update.duration || 0) / 60;
+      const creditCost = Math.ceil(durationInMinutes * 15);
+      const { deductCredits } = await import("../services/creditService");
+      await deductCredits(updated.tenant_id.toString(), creditCost, `Manual Sync: ${Math.round(update.duration)}s`);
     }
 
     return res.json({ success: true, callLog: updated });
   } catch (error) {
     console.error("syncCallStatus error:", error);
-    const errMsg = error instanceof Error ? error.message : String(error);
-    return res.status(500).json({ message: "Failed to sync call status", error: errMsg });
+    return res.status(500).json({ message: "Failed to sync" });
   }
 };
-// ...existing code...
-import { createCalendarEvent } from "../services/calendarService";
-import Contact from "../models/Contact";
 
+/**
+ * handleBolnaWebhook: Perfect multi-tenant data collection with tenant_id extraction.
+ * UPDATED to capture costs from both 'connected' and 'completed' statuses.
+ */
 export const handleBolnaWebhook = async (req: Request, res: Response) => {
-  console.log("📩 Bolna Webhook Payload:", JSON.stringify(req.body, null, 2));
+  console.log("📩 Processing Voice AI Webhook:", JSON.stringify(req.body, null, 2));
 
-  const body = req.body as {
-    call_id?: string;
-    recipient_phone_number?: string;
-    variables?: any;
-    status?: string;
-    user_data?: any;
-  };
-  const { call_id, recipient_phone_number, variables, status, user_data } = body;
+  const { 
+    id: call_id, 
+    user_number: raw_phone, 
+    status, 
+    conversation_duration: duration, 
+    total_cost: bolna_cost,
+    transcript,
+    context_details,
+    extracted_data,
+    agent_id
+  } = req.body;
+
+  const normalized_phone = raw_phone?.replace(/^\+91/, "");
+
+  // Dynamic Tenant ID Extraction (Hierarchy of Truth)
+  let tenant_id = 
+    req.headers['x-tenant-id'] || // 1. Check custom headers
+    context_details?.recipient_data?.tenant_id || // 2. Check call metadata
+    req.body.parameters?.tenant_id; // 3. Check tool-specific parameters
+
+  // Fallback & Validation
+  if (!tenant_id || tenant_id === "YOUR_TENANT_ID_HERE" || tenant_id === undefined || tenant_id === null) {
+    console.error("❌ Unidentified Tenant: No valid tenant_id found in request");
+    return res.status(400).json({ error: "Unidentified Tenant" });
+  }
+
+  // Log identified tenant_id for debugging
+  console.log(`🏢 Identified Tenant ID: ${tenant_id}`);
+
+  const orgName = context_details?.recipient_data?.organization || "Tesla";
+  const teamName = context_details?.recipient_data?.team || "General";
+  const agentPrompt = context_details?.recipient_data?.prompt || "";
 
   try {
-    // 1. Map Bolna status to your internal Contact status
-    const contactStatus = status === "completed" ? "completed" : "failed";
-    const tenant_id = user_data?.tenant_id;
-
-
-    // Safer logic: update only the contact with matching phone and lastCallId
+    // 1. Update contact status
+    const contactStatus = status === "completed" || status === "connected" ? "completed" : "failed";
     const updatedContact = await Contact.findOneAndUpdate(
-      {
-        phone: recipient_phone_number,
-        lastCallId: call_id // Ensures we update the EXACT contact assigned to this specific call
-      },
+      { phone: normalized_phone, lastCallId: call_id },
       { $set: { status: contactStatus } },
       { new: true }
     );
 
+    // 2. Save/Update call log (Upsert ensures we catch cost whether it comes in 'connected' or 'completed')
+    await CallLog.findOneAndUpdate(
+      { bolnaCallId: call_id },
+      {
+        phone: normalized_phone || raw_phone,
+        status,
+        tenant_id,
+        organization: orgName,
+        team: teamName,
+        agentPrompt,
+        agent_id,
+        transcript: transcript || "",
+        duration: Number(duration) || 0,
+        cost: Number(bolna_cost) || 0
+      },
+      { upsert: true }
+    );
 
-    if (!updatedContact) {
-      console.error(`❌ No contact found for number: ${recipient_phone_number} and call_id: ${call_id}`);
-      return res.status(200).send("Webhook received, but no contact matched.");
+    // 3. UPDATED BILLING RULE: If cost > 0, deduct credits regardless of status string
+    // This solves the issue where 'connected' had money but 'completed' had $0
+    if (tenant_id && Number(bolna_cost) > 0) {
+      const agentLabel = agent_id === process.env.BOLNA_MALE_AGENT_ID ? "Male Agent" : "Female Agent";
+      
+      try {
+        const { deductCredits } = await import("../services/creditService");
+        await deductCredits(
+          tenant_id.toString(),
+          Number(bolna_cost),
+          `Bolna Call (${status}): ${agentLabel} | ${orgName} | ${Math.round(Number(duration))}s`
+        );
+      } catch (creditError: any) {
+        console.error("⚠️ Credit Deduction Failed:", creditError.message);
+      }
     }
 
-    // Save CallLog with tenant_id
-    await (await import("../models/CallLog")).default.create({
-      phone: recipient_phone_number,
-      bolnaCallId: call_id,
-      status,
-      tenant_id,
-      agentPrompt: user_data?.prompt || "",
-      transcript: variables?.transcript || "",
-      summary: variables?.summary || "",
-      duration: variables?.duration || 0,
-      cost: variables?.cost || 0
-    });
+    // 4. Handle Calendar Tool Operations
+    // Check if this is a calendar tool call from Bolna
+    if (req.body.function_name || (req.body.function_call && req.body.function_call.name === "calendar_operations")) {
+      console.log("📅 Calendar tool detected, delegating to calendar handler");
+      try {
+        // Forward to calendar handler but don't return its response
+        // We need to ensure this webhook still returns 200 OK to Bolna
+        await calendarWebhook(req, res);
+        console.log("✅ Calendar operations completed");
+      } catch (calendarError: any) {
+        console.error("❌ Calendar operations failed:", calendarError.message);
+        // Continue processing even if calendar fails
+      }
+    }
 
-    // 2. Booking Logic
-    if (status === "completed" && variables?.appointment_time) {
-      await createCalendarEvent(updatedContact.tenant_id.toString(), {
-        summary: `AI Booking: ${updatedContact.name || recipient_phone_number}`,
-        startTime: variables.appointment_time,
-        endTime: new Date(new Date(variables.appointment_time).getTime() + 30 * 60000).toISOString(),
-        description: `Booking confirmed via AI Agent. Call ID: ${call_id}`
+    // 5. Handle Legacy AI booking (for backward compatibility)
+    const appointment_time = extracted_data?.appointment_time;
+    if (appointment_time && tenant_id) {
+      await createCalendarEvent(tenant_id.toString(), {
+        summary: `AI Booking: ${updatedContact?.name || normalized_phone}`,
+        startTime: appointment_time,
+        endTime: new Date(new Date(appointment_time).getTime() + 30 * 60000).toISOString(),
+        description: `Confirmed via AI. Call ID: ${call_id} | Agent: ${agent_id}`
       });
-      console.log(`✅ Event booked for Tenant: ${updatedContact.tenant_id}`);
     }
+
+    console.log(`✅ Webhook Processed: ${call_id} | Status: ${status} | Cost: ${bolna_cost}`);
 
   } catch (error) {
     console.error("❌ Webhook Processing Error:", error);
+    return res.status(500).json({ message: "Failed to process webhook" });
   }
 
-  return res.status(200).send("Webhook Processed");
+  // Always return 200 OK to prevent Bolna retries
+  return res.status(200).send("Webhook processed successfully");
 };

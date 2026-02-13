@@ -29,6 +29,8 @@ const CampaignSchema = new Schema({
     successful: { type: Number, default: 0 },
     failed: { type: Number, default: 0 }
   }
-}, { timestamps: true });
+}, { timestamps: true ,
+  strict: false
+});
 
 export default mongoose.model<ICampaign>("Campaign", CampaignSchema);

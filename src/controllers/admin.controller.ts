@@ -6,6 +6,23 @@ import CreditTransaction from '../models/CreditTransaction';
 import CallLog from '../models/CallLog';
 import mongoose from 'mongoose';
 
+export const getTenantUsers = async (req: Request, res: Response) => {
+  try {
+    const tenant_id = req.user.tenant_id;
+    if (!tenant_id) {
+      return res.status(403).json({ message: "No tenant context found for user." });
+    }
+
+    const users = await User.find({ tenant_id })
+      .select('-password')
+      .sort({ createdAt: -1 });
+      
+    res.json(users);
+  } catch (error: any) {
+    res.status(500).json({ message: "Error fetching tenant users", error: error.message });
+  }
+};
+
 // 6. SCOPE: Super Admin -> Toggle User Status
 export const toggleUserStatus = async (req: Request, res: Response) => {
   try {

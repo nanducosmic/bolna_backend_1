@@ -2,10 +2,19 @@ import { Request, Response } from "express";
 import CallLog from "../models/CallLog";
 import Contact from "../models/Contact";
 import axios from "axios";
+import mongoose from "mongoose";
 
-/* ========= 1. SYNC CALL RESULTS (Multi-Agent) ========= */
+/* ========= 1. SYNC CALL RESULTS (Multi-Agent with Tenant Injection) ========= */
 export const syncCallResults = async (req: Request, res: Response) => {
   try {
+    // Get current user's tenant_id to inject into synced records
+    const user = (req as any).user;
+    const currentTenantId = user?.tenant_id;
+    
+    if (!currentTenantId) {
+      return res.status(400).json({ message: "User tenant_id required for sync" });
+    }
+
     const AGENT_IDS = [
       process.env.BOLNA_FEMALE_AGENT_ID,
       process.env.BOLNA_MALE_AGENT_ID
@@ -33,27 +42,39 @@ export const syncCallResults = async (req: Request, res: Response) => {
             status: remote.status === "completed" ? "connected" : remote.status,
             duration: remote.telephony_data?.duration 
               ? Number(remote.telephony_data.duration) 
-              : (remote.conversation_duration || 0),
-            cost: remote.total_cost || 0,
+              : Number(remote.conversation_duration || 0),
+            cost: Number(remote.total_cost || 0),
             transcript: remote.transcript || "",
             summary: remote.summary || "No summary generated.",
+            tenant_id: new mongoose.Types.ObjectId(currentTenantId), // INJECT current user's tenant_id
             createdAt: new Date(remote.created_at || remote.initiated_at)
           },
           { upsert: true }
         );
       }
     }
-    res.json({ message: `Success! Synced ${totalSyncedCount} calls.` });
+    res.json({ message: `Success! Synced ${totalSyncedCount} calls for tenant ${currentTenantId}.` });
   } catch (error: any) {
     console.error("Sync Error:", error.message);
     res.status(500).json({ message: "Failed to pull history." });
   }
 };
 
-/* ========= 2. GET DASHBOARD STATS ========= */
+/* ========= 2. GET DASHBOARD STATS (TENANT-ISOLATED) ========= */
 export const getCallStats = async (req: Request, res: Response) => {
   try {
+    // Build tenant filter based on user role
+    const user = (req as any).user;
+    let match: any = {};
+    
+    if (user?.role !== "super_admin") {
+      match = { tenant_id: new mongoose.Types.ObjectId(user.tenant_id) };
+    } else if (req.query.tenant_id) {
+      match = { tenant_id: new mongoose.Types.ObjectId(req.query.tenant_id) };
+    }
+
     const stats = await CallLog.aggregate([
+      { $match: match },
       { $group: {
           _id: null,
           total: { $sum: 1 },
@@ -65,59 +86,64 @@ export const getCallStats = async (req: Request, res: Response) => {
   } catch (error) { res.status(500).json({ message: "Error" }); }
 };
 
-/* ========= 3. GET FULL HISTORY (WITH PAGINATION & GRAND TOTAL) ========= */
+/* ========= 3. GET FULL HISTORY (PERFECT ROLE-BASED FILTERING & TOTAL BURN) ========= */
 export const getFullHistory = async (req: Request, res: Response) => {
   try {
-    // 1. Get page and limit from request query
+    // 1. Get pagination parameters
     const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
+    const limit = parseInt(req.query.limit as string) || 10;
     const skip = (page - 1) * limit;
 
-
-    // Only show logs for the current tenant unless super_admin
+    // 2. DETECT USER ROLE FROM JWT and build tenant filter
     const user = (req as any).user;
-    let match = {};
-    if (user?.role === "admin" && user?.tenant_id) {
-      match = { tenant_id: user.tenant_id };
+    let match: any = {};
+    
+    // For 'Admin' role (Tesla): Strictly filter by tenant_id - includes BOTH agents
+    if (user?.role !== "super_admin") {
+      match = { tenant_id: new mongoose.Types.ObjectId(user.tenant_id) };
+    } 
+    // For 'Super Admin': Allow viewing all calls globally OR filter by specific tenant
+    else if (req.query.tenant_id) {
+      match = { tenant_id: new mongoose.Types.ObjectId(req.query.tenant_id) };
     }
 
-    // If agentId is a ref, populate its name
-    let history = [];
-    let totalCalls = 0;
-    let totalCostData = [];
-    try {
-      [history, totalCalls, totalCostData] = await Promise.all([
-        CallLog.find(match)
-          .sort({ createdAt: -1 })
-          .skip(skip)
-          .limit(limit),
-        CallLog.countDocuments(match),
-        CallLog.aggregate([
-          { $match: match },
-          { $group: { _id: null, totalBurn: { $sum: "$cost" } } }
-        ])
-      ]);
-    } catch (err: any) {
-      return res.status(500).json({ message: "Error fetching call logs", error: err?.message || String(err) });
-    }
+    // 3. PARALLEL QUERIES for performance
+    let [history, totalCalls, totalCostData] = await Promise.all([
+      CallLog.find(match)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(), // Use lean for better performance
+      CallLog.countDocuments(match),
+      // MongoDB aggregation for total burn calculation specifically for that tenant_id
+      CallLog.aggregate([
+        { $match: match },
+        { $group: { _id: null, totalBurn: { $sum: "$cost" } } }
+      ])
+    ]);
 
-    // 3. Extract the grand total number
+    // 4. Extract grand total burn for the tenant
     const grandTotalBurn = totalCostData.length > 0 ? totalCostData[0].totalBurn : 0;
 
-    // 4. Send back data + pagination metadata (including totalBurn)
+    // 5. Return paginated results with total burn
     res.json({
       calls: history,
       pagination: {
         totalCalls,
-        grandTotalBurn, // This allows the frontend to show the amazing total
+        grandTotalBurn, // Total burn for this tenant (Tesla sees only Tesla costs)
         totalPages: Math.ceil(totalCalls / limit),
         currentPage: page,
         hasNextPage: skip + history.length < totalCalls,
         hasPrevPage: page > 1
       }
     });
-  } catch (error) { 
-    res.status(500).json({ message: "Error fetching history" }); 
+
+  } catch (error: any) {
+    console.error("getFullHistory error:", error);
+    res.status(500).json({ 
+      message: "Error fetching call history", 
+      error: error?.message || String(error) 
+    });
   }
 };
 

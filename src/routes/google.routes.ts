@@ -1,10 +1,73 @@
-import { Router } from "express";
-import { getAuthUrl, googleCallback } from "../controllers/googleAuth.controller";
-import { protect } from "../middleware/authMiddleware";
+import { Router, Request, Response } from "express";
+import { google } from "googleapis";
+import Tenant from "../models/Tenant"; 
+import User from "../models/User"; // Ensure this points to your User model
+
 
 const router = Router();
 
-router.get("/google-calendar", protect, getAuthUrl);
-router.get("/google-calendar/callback", googleCallback); // Google hits this public URL
+const oauth2Client = new google.auth.OAuth2(
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_SECRET,
+  process.env.GOOGLE_REDIRECT_URI
+);
+
+// 1. DYNAMIC CONNECT ROUTE
+router.get("/connect", (req: Request, res: Response) => {
+  // Grab the tenantId passed from your Frontend button
+  const { tenantId } = req.query; 
+
+  if (!tenantId) {
+    return res.status(400).send("No Tenant ID provided.");
+  }
+
+  const url = oauth2Client.generateAuthUrl({
+    access_type: 'offline', // Mandatory to get refresh_token
+    prompt: 'consent',     // Forces Google to show consent screen and give a refresh_token
+    scope: [
+      'https://www.googleapis.com/auth/calendar.events',
+      'https://www.googleapis.com/auth/userinfo.email',
+      'openid'
+    ],
+    state: tenantId as string
+  });
+  res.redirect(url);
+});
+
+// 2. DYNAMIC CALLBACK ROUTE
+router.get("/callback", async (req: Request, res: Response) => {
+  try {
+    const { code, state } = req.query;
+    if (!code) throw new Error("No code provided");
+    // Exchange code for tokens
+    const { tokens } = await oauth2Client.getToken(code as string);
+    oauth2Client.setCredentials(tokens);
+    let email = null;
+    if (tokens.id_token) {
+      const ticket = await oauth2Client.verifyIdToken({
+        idToken: tokens.id_token,
+        audience: process.env.GOOGLE_CLIENT_ID
+      });
+      email = ticket.getPayload()?.email;
+    }
+    // Update User
+    await User.findOneAndUpdate(
+      { tenant_id: state },
+      { 
+        isCalendarLinked: true,
+        googleAuth: {
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token, // This is crucial for offline access
+          expiryDate: tokens.expiry_date,
+          email: email
+        }
+      }
+    );
+    res.redirect('http://localhost:5173/integrations?status=success');
+  } catch (error: any) {
+    console.error("❌ Google OAuth Callback Error:", error.message);
+    res.redirect('http://localhost:5173/integrations?status=error');
+  }
+});
 
 export default router;

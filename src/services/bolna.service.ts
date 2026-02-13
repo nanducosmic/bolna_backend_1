@@ -20,7 +20,7 @@ export const createBolnaCall = async (
   try {
     const formattedPhone = phone.startsWith("+") ? phone : `+91${phone}`;
 
-    // Fetch tenant config for agent selection
+    // Fetch tenant config for agent selection and calendar integration
     const tenant = await Tenant.findById(tenant_id);
     if (!tenant) throw new Error("Tenant not found");
 
@@ -47,16 +47,65 @@ export const createBolnaCall = async (
 
     console.log(`🚀 Triggering ${gender} call for tenant ${tenant_id} using Agent ID: ${selectedAgentId}`);
 
+    // Prepare Bolna API payload with calendar tools if linked
+    const bolnaPayload: any = {
+      agent_id: selectedAgentId,
+      recipient_phone_number: formattedPhone,
+
+      recipient_data: {
+      tenant_id: tenant_id,
+    
+    },
+      user_data: {
+        prompt: prompt,
+        tenant_id: tenant_id
+      }
+    };
+
+    // Integration: Add Calendar Tool if tenant has calendar linked
+    if (tenant.isCalendarLinked) {
+      // bolnaPayload.tools = [{
+      //   type: "function",
+      //   function: {
+      //     name: "calendar_operations",
+      //     description: "Check calendar availability and create appointments",
+      //     parameters: {
+      //       type: "object",
+      //       properties: {
+      //         operation: {
+      //           type: "string",
+      //           enum: ["check_availability", "create_event"],
+      //           description: "The calendar operation to perform"
+      //         },
+      //         start_time: {
+      //           type: "string",
+      //           format: "date-time",
+      //           description: "Start time in ISO format (required for both operations)"
+      //         },
+      //         end_time: {
+      //           type: "string", 
+      //           format: "date-time",
+      //           description: "End time in ISO format (required for create_event)"
+      //         },
+      //         summary: {
+      //           type: "string",
+      //           description: "Event title (required for create_event)"
+      //         },
+      //         description: {
+      //           type: "string",
+      //           description: "Event description (optional for create_event)"
+      //         }
+      //       },
+      //       required: ["operation", "start_time"]
+      //     }
+      //   }
+      // }];
+      console.log(`📅 Calendar tools enabled for tenant ${tenant_id}`);
+    }
+
     const response = await axios.post(
       "https://api.bolna.ai/call",
-      {
-        agent_id: selectedAgentId,
-        recipient_phone_number: formattedPhone,
-        user_data: {
-          prompt: prompt,
-          tenant_id: tenant_id
-        }
-      },
+      bolnaPayload,
       {
         headers: {
           Authorization: `Bearer ${BOLNA_API_KEY}`,

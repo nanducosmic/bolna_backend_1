@@ -6,13 +6,16 @@ export interface ICallLog extends Document {
   status: "initiated" | "calling" | "completed" | "connected" | "not_connected" | "failed" | "in-progress" | "no-answer" | "busy" | "test-call";
   bolnaCallId?: string;
   transcript?: string; 
-  cost?: number;
+  cost: number;
   summary?: string;
-  duration?: number;
+  duration: number;
   gender?: "male" | "female"; 
-  tenant_id?: mongoose.Types.ObjectId;
+  tenant_id: mongoose.Types.ObjectId;
   source?: "user" | "tenant";
   agentName?: string;
+  agent_id?: string; // Bolna agent ID for multi-agent tracking
+  organization?: string;
+  team?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -32,7 +35,9 @@ const callLogSchema = new Schema<ICallLog>(
       default: "initiated",
     },
     bolnaCallId: { 
-      type: String 
+      type: String,
+      required: true,
+      unique: true
     },
     transcript: { 
       type: String, 
@@ -40,11 +45,13 @@ const callLogSchema = new Schema<ICallLog>(
     },
     duration: { 
       type: Number, 
-      default: 0 
+      default: 0,
+      required: true
     },
     cost: {
       type: Number,
-      default: 0
+      default: 0,
+      required: true
     },
     summary: {
       type: String,
@@ -57,7 +64,8 @@ const callLogSchema = new Schema<ICallLog>(
     },
     tenant_id: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Tenant"
+      ref: "Tenant",
+      required: true
     },
     source: {
       type: String,
@@ -67,15 +75,30 @@ const callLogSchema = new Schema<ICallLog>(
     agentName: {
       type: String,
       default: "Unknown Agent"
+    },
+    agent_id: {
+      type: String, // Bolna agent ID (50fe0026... or 9caf93c6...)
+      default: ""
+    },
+    organization: {
+      type: String,
+      default: ""
+    },
+    team: {
+      type: String,
+      default: ""
     }
   },
   { timestamps: true }
 );
 
-/** * CRITICAL ADDITION: Pagination Index
- * This ensures that sorting by newest calls (createdAt: -1) 
- * remains lightning fast even as your database grows.
+/**
+ * CRITICAL ADDITION: Pagination Indexes
+ * These ensure that sorting and filtering remain lightning fast 
+ * even as your database grows with multi-tenant data.
  */
 callLogSchema.index({ createdAt: -1 });
+callLogSchema.index({ tenant_id: 1, createdAt: -1 }); // For tenant-specific queries
+callLogSchema.index({ bolnaCallId: 1 }, { unique: true }); // For upsert operations
 
 export default mongoose.model<ICallLog>("CallLog", callLogSchema);

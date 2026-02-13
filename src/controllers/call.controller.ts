@@ -4,6 +4,7 @@ import Contact from "../models/Contact";
 import CallLog from "../models/CallLog";
 import { createBolnaCall } from "../services/bolna.service";
 import { getAutomationStatus } from "../services/automationEngine";
+import { hasMinimumBalance } from "../services/creditService";
 import Tenant from "../models/Tenant";
 import User from "../models/User";
 
@@ -21,6 +22,16 @@ export const initiateCalls = async (req: Request, res: Response) => {
 
     // Extract required fields
     const tenant_id = (req as any).user?.tenant_id;
+    
+    // 0. Credit Gatekeeper
+    const canMakeCall = await hasMinimumBalance(tenant_id, 15); // Threshold for single call
+    if (!canMakeCall) {
+      return res.status(402).json({
+        success: false,
+        message: "Insufficient credits to initiate calls. Please recharge your organizational wallet."
+      });
+    }
+
     const { phoneNumber, recipients, gender = "male" } = req.body;
     if (!tenant_id || (!phoneNumber && !Array.isArray(recipients))) {
       return res.status(400).json({ message: "Missing tenant_id and neither phoneNumber nor recipients provided." });

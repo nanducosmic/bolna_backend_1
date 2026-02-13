@@ -2,6 +2,8 @@ import { Request, Response } from "express";
 import Contact from "../models/Contact";
 import User from "../models/User";
 import Agent from "../models/Agent";
+import Credit from "../models/Credit";
+import mongoose from "mongoose";
 
 export const getDashboardStats = async (req: any, res: Response) => {
   try {
@@ -23,21 +25,28 @@ export const getDashboardStats = async (req: any, res: Response) => {
     } else {
       // --- SUB-USER (CLIENT) SCOPE ---
       // Get counts for Successful vs Failed calls
-      const callStats = await Contact.aggregate([
-        { $match: { tenant_id } },
-        { $group: { _id: "$status", count: { $sum: 1 } } }
+      const [callStats, wallet] = await Promise.all([
+        Contact.aggregate([
+          { $match: { tenant_id: new mongoose.Types.ObjectId(tenant_id) } },
+          { $group: { _id: "$status", count: { $sum: 1 } } }
+        ]),
+        Credit.findOne({ tenant_id })
       ]);
 
       const formattedStats = {
         total: callStats.reduce((acc, curr) => acc + curr.count, 0),
         completed: callStats.find(s => s._id === 'completed')?.count || 0,
         failed: callStats.find(s => s._id === 'failed')?.count || 0,
-        queued: callStats.find(s => s._id === 'queued')?.count || 0,
+        queued: callStats.find(s => s._id === 'queued' || s._id === 'pending')?.count || 0,
       };
+
+      const balance = wallet ? wallet.balance : 0;
+      const lowBalanceWarning = balance < 10;
 
       return res.json({
         stats: formattedStats,
-        balance: req.user.balance || 0,
+        balance,
+        lowBalanceWarning,
         role: "admin"
       });
     }
