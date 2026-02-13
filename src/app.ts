@@ -53,6 +53,10 @@ app.use(cors({
   credentials: true,
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID']
 }));
+
+
+app.use(express.json()); 
+app.use(express.urlencoded({ extended: true }));
 // --- PUBLIC ROUTES ---
 app.use("/api/auth", authRoutes);
 app.use("/api/webhooks", webhookRoutes); // Public access for Bolna callbacks
