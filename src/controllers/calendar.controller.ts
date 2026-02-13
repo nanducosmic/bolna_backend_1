@@ -37,14 +37,13 @@ export const calendarWebhook = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Unidentified Tenant" });
     }
 
-    let result;
+let result;
     switch (function_name) {
-      // Changed to match the "check_availability" string from your Tool JSON
       case "check_availability": 
         result = await handleCheckAvailability(tenant_id, req.body);
         break;
 
-      // Changed to match the "create_calendar_event" string from your Tool JSON
+      // This is the "booking" part you were looking for!
       case "create_calendar_event":
         result = await handleCreateEvent(tenant_id, req.body);
         break;
@@ -53,7 +52,6 @@ export const calendarWebhook = async (req: Request, res: Response) => {
         console.error(`❌ Unknown function_name: ${function_name}`);
         return res.status(400).json({ error: `Unknown function: ${function_name}` });
     }
-
     return res.status(200).json({ success: true, result });
   } catch (error: any) {
     console.error("❌ Calendar Webhook Error:", error.message);
@@ -62,29 +60,56 @@ export const calendarWebhook = async (req: Request, res: Response) => {
 };
 
 async function handleCheckAvailability(tenant_id: string, parameters: any) {
+  // 1. Extract and Validate Input
   const { start_time, end_time } = parameters || {};
+  
+  console.log(`🔍 Checking availability for Tenant: ${tenant_id}`);
+  console.log(`⏰ Requested Window: ${start_time} to ${end_time}`);
 
   if (!start_time || !end_time) {
-    throw new Error("start_time and end_time required for availability check");
+    console.error("❌ Missing required time parameters");
+    throw new Error("start_time and end_time are required to check availability.");
   }
 
-  const startTime = new Date(start_time);
-  const endTime = new Date(end_time);
+  try {
+    // 2. Format Dates (Ensures they are valid ISO strings)
+    const startTime = new Date(start_time);
+    const endTime = new Date(end_time);
 
-  const availability = await checkSlotAvailability(
-    tenant_id,
-    startTime,
-    endTime
-  );
+    if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
+      throw new Error("Invalid date format provided for start_time or end_time.");
+    }
 
-  return {
-    is_available: availability.isAvailable,
-    message: availability.message,
-    start_time,
-    end_time
-  };
+    // 3. Call your core logic 
+    // This assumes checkSlotAvailability handles the Google API Free/Busy check
+    const availability = await checkSlotAvailability(
+      tenant_id,
+      startTime,
+      endTime
+    );
+
+    // 4. Return formatted response for Bolna AI
+    return {
+      is_available: availability.isAvailable,
+      message: availability.message || (availability.isAvailable ? "Slot is free." : "Slot is busy."),
+      data: {
+        start: startTime.toISOString(),
+        end: endTime.toISOString(),
+        tenant_id
+      }
+    };
+
+  } catch (error: any) {
+    console.error("🔥 Error in handleCheckAvailability:", error.message);
+    
+    // Return a structured error so the AI can explain the "Technical Issue"
+    return {
+      is_available: false,
+      message: `Could not check availability: ${error.message}`,
+      error: true
+    };
+  }
 }
-
 /**
  * MAIN HANDLER: All creation and availability logic lives here
  */
