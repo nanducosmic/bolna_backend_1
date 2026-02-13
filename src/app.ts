@@ -32,12 +32,26 @@ dotenv.config();
 const app = express();
 
 // --- GLOBAL MIDDLEWARE ---
+// Update this in your app.ts
+const allowedOrigins = [
+  // 'http://localhost:5173', 
+  'http://localhost:5174', 
+  // 'https://your-frontend-name.onrender.com' // <-- Add your future frontend URL here
+];
+
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: function (origin, callback) {
+    // allow requests with no origin (like mobile apps or curl)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID'],
   credentials: true
 }));
-app.use(express.json());
 
 // --- PUBLIC ROUTES ---
 app.use("/api/auth", authRoutes);
