@@ -51,7 +51,7 @@ router.get("/callback", async (req: Request, res: Response) => {
       email = ticket.getPayload()?.email;
     }
     // Update User
-    await User.findOneAndUpdate(
+  await User.findOneAndUpdate(
       { tenant_id: state },
       { 
         isCalendarLinked: true,
@@ -63,10 +63,12 @@ router.get("/callback", async (req: Request, res: Response) => {
         }
       }
     );
-    res.redirect('http://localhost:5173/integrations?status=success');
+    // ✅ Replaced with dynamic environment variable
+    res.redirect(`${process.env.FRONTEND_URL}/integrations?status=success`);
   } catch (error: any) {
     console.error("❌ Google OAuth Callback Error:", error.message);
-    res.redirect('http://localhost:5173/integrations?status=error');
+    // ✅ Replaced with dynamic environment variable
+    res.redirect(`${process.env.FRONTEND_URL}/integrations?status=error`);
   }
 });
 
