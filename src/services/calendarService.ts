@@ -22,6 +22,35 @@ export const getTenantCalendarAuth = async (tenantId: string) => {
       refresh_token: tenant.googleAuth.refreshToken
     });
 
+
+oauth2Client.on('tokens', async (tokens) => {
+  // 1. Safety Check: Ensure the tenant and the googleAuth object exist
+  if (!tenant || !tenant.googleAuth) {
+    console.error("❌ Cannot save tokens: Tenant or googleAuth is undefined");
+    return;
+  }
+
+  // 2. Update the Refresh Token (only if Google sends a new one)
+  if (tokens.refresh_token) {
+    // Use '?? undefined' to convert any 'null' to 'undefined'
+    tenant.googleAuth.refreshToken = tokens.refresh_token ?? undefined;
+  }
+
+  // 3. Update the Access Token
+  if (tokens.access_token) {
+    tenant.googleAuth.accessToken = tokens.access_token ?? undefined;
+  }
+
+  try {
+    await tenant.save();
+    console.log("🔄 Google Tokens refreshed and saved for tenant:", tenantId);
+  } catch (err: any) {
+    console.error("❌ Failed to save refreshed tokens to DB:", err.message);
+  }
+});
+    
+    
+
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
     
     return {
