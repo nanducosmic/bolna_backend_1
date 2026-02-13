@@ -70,7 +70,7 @@ export const getCallStats = async (req: Request, res: Response) => {
     if (user?.role !== "super_admin") {
       match = { tenant_id: new mongoose.Types.ObjectId(user.tenant_id) };
     } else if (req.query.tenant_id) {
-      match = { tenant_id: new mongoose.Types.ObjectId(req.query.tenant_id) };
+      match = { tenant_id: new mongoose.Types.ObjectId(req.query.tenant_id as string) };
     }
 
     const stats = await CallLog.aggregate([
@@ -104,7 +104,7 @@ export const getFullHistory = async (req: Request, res: Response) => {
     } 
     // For 'Super Admin': Allow viewing all calls globally OR filter by specific tenant
     else if (req.query.tenant_id) {
-      match = { tenant_id: new mongoose.Types.ObjectId(req.query.tenant_id) };
+      match = { tenant_id: new mongoose.Types.ObjectId(req.query.tenant_id as string) };
     }
 
     // 3. PARALLEL QUERIES for performance
