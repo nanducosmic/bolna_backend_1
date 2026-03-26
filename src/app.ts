@@ -57,12 +57,47 @@ app.use(cors({
 }));
 
 
+
+// --- GLOBAL MIDDLEWARE ---
+
+app.use((req, res, next) => {
+  // This header bypasses the ngrok "Visit Site" warning page for API calls
+  res.setHeader('ngrok-skip-browser-warning', 'true');
+  next();
+});
+
+// ... rest of your app.use(cors...)
+
+
+
 app.use(express.json()); 
 app.use(express.urlencoded({ extended: true }));
 // --- PUBLIC ROUTES ---
 app.use("/api/auth", authRoutes);
 app.use("/api/webhooks", webhookRoutes); // Public access for Bolna callbacks
 app.use("/api/calendar", calendarRoutes); // Calendar webhook routes
+
+
+
+// 👇 INSERT THE META HANDSHAKE HERE 👇
+// Place this in app.ts BEFORE any 404 catchers or protected routes
+app.get('/webhook', (req: Request, res: Response) => {
+  console.log('--- Incoming Meta Handshake ---');
+  console.log('Query Params:', req.query);
+
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  if (mode === 'subscribe' && token === 'Voaiz_LeadGen_2026') {
+    console.log('✅ Token Matches. Sending challenge back...');
+    // CRITICAL: Must be plain text, not JSON
+    return res.status(200).send(challenge); 
+  } else {
+    console.log('❌ Token Mismatch or missing params');
+    return res.sendStatus(403);
+  }
+});
 
 app.get("/", (req: Request, res: Response) => {
   res.send("Backend API running 🚀");
