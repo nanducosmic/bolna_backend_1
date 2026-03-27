@@ -30,13 +30,12 @@ export const fetchLeadDetails = async (leadId: string) => {
     
     // 3. Return a clean, normalized object
     // We use "data.full_name || data.name" because Meta field names can vary by form
-    return {
-      fullName: data.full_name || data.name || "N/A",
-      phoneNumber: data.phone_number || data.phone || "N/A",
+  return {
+      fullName: data.full_name || data.name || `${data.first_name || ''} ${data.last_name || ''}`.trim() || "N/A",
+      phoneNumber: data.phone_number || data.phone || data.mobile_number || "N/A",
       email: data.email || "N/A",
       metaId: leadId
     };
-
   } catch (error: any) {
     // 4. Enhanced Error Logging
     console.error("❌ Failed to fetch lead details:", error.response?.data || error.message);
