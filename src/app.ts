@@ -25,6 +25,7 @@ import bolnaRoutes from "./routes/bolna.routes";
 import agenda from "./config/agenda";
 import { fetchLeadDetails } from './services/metaService';
 import Lead from './models/Lead';
+import leadRoutes from "./routes/lead.routes";
 
 // Service Imports
 import { getAutomationStatus } from "./services/automationEngine";
@@ -153,6 +154,8 @@ app.get("/", (req: Request, res: Response) => {
   res.send("Backend API running 🚀");
 });
 
+
+app.use("/api/leads", leadRoutes);
 // --- TENANT STATUS ROUTES (Accessible by any authenticated user) ---
 app.use("/api/tenant-status", protect, tenantsStatusRoutes);
 
