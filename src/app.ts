@@ -23,6 +23,7 @@ import tenantsStatusRoutes from "./routes/tenants.routes";
 import adminRoutes from "./routes/admin.routes";
 import bolnaRoutes from "./routes/bolna.routes";
 import agenda from "./config/agenda";
+import { fetchLeadDetails } from './services/metaService';
 
 
 // Service Imports
@@ -81,22 +82,90 @@ app.use("/api/calendar", calendarRoutes); // Calendar webhook routes
 
 // 👇 INSERT THE META HANDSHAKE HERE 👇
 // Place this in app.ts BEFORE any 404 catchers or protected routes
+// --- HANDLE ACTUAL LEAD DATA (POST) ---
 app.get('/webhook', (req: Request, res: Response) => {
-  console.log('--- Incoming Meta Handshake ---');
-  console.log('Query Params:', req.query);
-
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
-  if (mode === 'subscribe' && token === 'Voaiz_LeadGen_2026') {
-    console.log('✅ Token Matches. Sending challenge back...');
-    // CRITICAL: Must be plain text, not JSON
-    return res.status(200).send(challenge); 
-  } else {
-    console.log('❌ Token Mismatch or missing params');
-    return res.sendStatus(403);
+  if (mode === 'subscribe' && token === process.env.FB_VERIFY_TOKEN) {
+    console.log('✅ WEBHOOK_VERIFIED');
+    return res.status(200).send(challenge);
   }
+  
+  console.error('❌ WEBHOOK_VERIFICATION_FAILED');
+  res.sendStatus(403);
+});
+
+/**
+ * 2. THE LEAD PROCESSOR (POST)
+ * This handles the actual lead data sent by Meta.
+ * 
+ * 
+ * 
+ */
+
+
+
+app.get('/webhook', (req: Request, res: Response) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  // Check if the verify token matches what you set in Meta Dashboard
+  if (mode === 'subscribe' && token === process.env.FB_VERIFY_TOKEN) {
+    console.log('✅ Webhook Verified by Meta');
+    return res.status(200).send(challenge);
+  }
+  
+  res.sendStatus(403);
+});
+
+app.post('/webhook', async (req: Request, res: Response) => {
+  const body = req.body;
+
+  // Verify this is a Page webhook
+  if (body.object === 'page') {
+    
+    // We use for...of to correctly handle the 'await' for each lead
+    for (const entry of body.entry) {
+      for (const change of entry.changes) {
+        if (change.field === 'leadgen') {
+          const { leadgen_id, form_id } = change.value;
+          
+          console.log('-------------------------------------------');
+          console.log('🚀 NEW LEAD DETECTED FROM META!');
+          console.log(`Lead ID: ${leadgen_id} | Form: ${form_id}`);
+
+          try {
+            // CALL YOUR METASERVICE
+            const leadData = await fetchLeadDetails(leadgen_id);
+
+            if (leadData) {
+              console.log('📦 DATA RETRIEVED:');
+              console.log(`👤 Name: ${leadData.fullName}`);
+              console.log(`📞 Phone: ${leadData.phoneNumber}`);
+              console.log(`📧 Email: ${leadData.email}`);
+
+              // TODO: TASK 2 - Trigger Bolna AI Call
+              // await triggerBolnaCall(leadData.phoneNumber, leadData.fullName);
+              
+              // TODO: TASK 3 - Save to MongoDB
+              // await LeadModel.create(leadData);
+            }
+          } catch (error) {
+            console.error('❌ Error processing lead data:', error);
+          }
+          console.log('-------------------------------------------');
+        }
+      }
+    }
+    
+    // Always return 200 within 10 seconds or Meta will disable the webhook
+    return res.status(200).send('EVENT_RECEIVED');
+  }
+
+  res.sendStatus(404);
 });
 
 app.get("/", (req: Request, res: Response) => {
