@@ -90,7 +90,7 @@ app.get('/webhook', (req: Request, res: Response) => {
 
   if (mode === 'subscribe' && token === process.env.FB_VERIFY_TOKEN) {
     console.log('✅ WEBHOOK_VERIFIED by Meta');
-    return res.status(200).send(challenge);
+    return res.status(200).set('Content-Type', 'text/plain').send(challenge);
   }
   
   console.error('❌ WEBHOOK_VERIFICATION_FAILED: Token mismatch');
