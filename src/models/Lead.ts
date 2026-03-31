@@ -13,6 +13,8 @@ export interface ILead extends Document {
   fullName: string;      // Fetched via Graph API
   phoneNumber: string;   // Fetched via Graph API
   email?: string;        // 📧 Added for Richinnovations lead capture
+  formName?: string; 
+  adName?: string;
   status: 'pending' | 'calling' | 'completed' | 'failed';
   createdAt: Date;
 }
@@ -42,6 +44,8 @@ const LeadSchema: Schema = new Schema({
   email: { 
     type: String 
   }, // 📧 Added to the database structure
+formName: { type: String },
+  adName: { type: String },
   status: { 
     type: String, 
     enum: ['pending', 'calling', 'completed', 'failed'], 

@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import mongoose from 'mongoose';
 // Middleware Imports
 import { protect, superAdminOnly } from "./middleware/authMiddleware";
+import axios from 'axios';
 
 // Route Imports
 import authRoutes from "./routes/authRoutes";
@@ -113,27 +114,47 @@ app.post('/webhook', async (req: Request, res: Response) => {
           console.log('🚀 NEW LEAD DETECTED FROM META!');
           console.log(`Lead ID: ${leadgen_id} | Form: ${form_id}`);
 
-          try {
+         try {
             // Step 1: Fetch full details using the Service we built
             const leadData = await fetchLeadDetails(leadgen_id);
 
             if (leadData) {
               console.log(`📦 DATA RETRIEVED for ${leadData.fullName}`);
 
-              // Step 2: Save to MongoDB using your Lead model
-              // This is the "Memory" for Richinnovations leads
-              await Lead.create({
-                leadId: leadgen_id,
-                adId: ad_id,
-                formId: form_id,
-                pageId: page_id,
-                fullName: leadData.fullName,
-                phoneNumber: leadData.phoneNumber,
-                email: leadData.email,
-                status: 'pending' // Ready for future tasks
-              });
+              // Step 2: Enrichment - Fetching the actual names from Meta
+              const [formRes, adRes] = await Promise.all([
+                axios.get(`https://graph.facebook.com/v22.0/${form_id}?fields=name&access_token=${process.env.FB_PAGE_ACCESS_TOKEN}`),
+                axios.get(`https://graph.facebook.com/v22.0/${ad_id}?fields=name&access_token=${process.env.FB_PAGE_ACCESS_TOKEN}`)
+              ]);
 
-              console.log('💾 Lead successfully saved to MongoDB');
+              const formName = formRes.data.name; 
+              const adName = adRes.data.name;     
+
+              // Step 3: Save/Update in MongoDB
+              await Lead.findOneAndUpdate(
+                { leadId: leadgen_id }, 
+                {                       
+                  leadId: leadgen_id,
+                  adId: ad_id,
+                  formId: form_id,
+                  pageId: page_id,
+                  fullName: leadData.fullName,
+                  phoneNumber: leadData.phoneNumber,
+                  email: leadData.email,
+                  // 👇 IMPORTANT: We MUST add these here to save them to the DB!
+                  formName: formName, 
+                  adName: adName,     
+                  status: 'pending',
+                  capturedAt: leadData.createdTime || new Date()
+                },
+                { 
+                  upsert: true,         
+                  new: true,            
+                  runValidators: true 
+                }
+              );
+
+              console.log(`💾 Lead for ${leadData.fullName} synced with Form: ${formName}`);
             }
           } catch (error) {
             console.error('❌ Error processing lead data:', error);

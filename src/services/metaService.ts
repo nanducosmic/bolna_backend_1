@@ -48,7 +48,8 @@ export const fetchLeadDetails = async (leadId: string) => {
       fullName: data.full_name || data.name || `${data.first_name || ''} ${data.last_name || ''}`.trim() || "N/A",
       phoneNumber: data.phone_number || data.phone || data.mobile_number || "N/A",
       email: data.email || "N/A",
-      metaId: leadId
+      metaId: leadId,
+      createdTime: res.data.created_time
     };
 
   } catch (error: any) {
