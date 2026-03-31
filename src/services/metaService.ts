@@ -49,7 +49,7 @@ export const fetchLeadDetails = async (leadId: string) => {
       phoneNumber: data.phone_number || data.phone || data.mobile_number || "N/A",
       email: data.email || "N/A",
       metaId: leadId,
-      createdTime: res.data.created_time
+      created_time: res.data.created_time
     };
 
   } catch (error: any) {

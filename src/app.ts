@@ -145,8 +145,8 @@ app.post('/webhook', async (req: Request, res: Response) => {
                   formName: formName, 
                   adName: adName,     
                   status: 'pending',
-                  capturedAt: leadData.createdTime || new Date()
-                },
+                  // 🚀 CHANGE THIS LINE
+                  capturedAt: leadData.created_time ? new Date(leadData.created_time) : new Date(),                },
                 { 
                   upsert: true,         
                   new: true,            
