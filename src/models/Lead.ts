@@ -16,6 +16,7 @@ export interface ILead extends Document {
   formName?: string; 
   adName?: string;
   status: 'pending' | 'calling' | 'completed' | 'failed';
+  capturedAt?: Date; 
   createdAt: Date;
 }
 
@@ -46,6 +47,7 @@ const LeadSchema: Schema = new Schema({
   }, // 📧 Added to the database structure
 formName: { type: String },
   adName: { type: String },
+  capturedAt: { type: Date },
   status: { 
     type: String, 
     enum: ['pending', 'calling', 'completed', 'failed'], 
