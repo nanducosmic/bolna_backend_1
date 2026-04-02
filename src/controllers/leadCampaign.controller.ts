@@ -13,7 +13,7 @@ export const getMetaCampaignFolders = async (req: any, res: Response) => {
           adName: { $ne: null },
           // 💡 TEMP: Comment out the line below to verify data shows up. 
           // If folders appear after commenting this, your User PageID is wrong.
-          pageId: userPageId 
+          //pageId: userPageId 
         } 
       },
       {
@@ -46,7 +46,7 @@ export const triggerMetaBatch = async (req: any, res: Response) => {
     const leads = await Lead.find({ 
       adName, 
       status: "pending",
-      pageId: userPageId 
+     // pageId: userPageId 
     });
 
     if (leads.length === 0) {
