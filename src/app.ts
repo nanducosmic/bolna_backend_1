@@ -98,39 +98,50 @@ app.get('/webhook', (req: Request, res: Response) => {
   res.sendStatus(403);
 });
 
+
+
+
+
+
+
+
+
 // --- 2. THE LEAD PROCESSOR (POST) ---
-// This handles actual lead data from Richinnovations business ads
 app.post('/webhook', async (req: Request, res: Response) => {
   const body = req.body;
 
   if (body.object === 'page') {
-    // Meta sends an array of entries
     for (const entry of body.entry) {
       for (const change of entry.changes) {
         if (change.field === 'leadgen') {
           const { leadgen_id, form_id, ad_id, page_id } = change.value;
           
-          console.log('-------------------------------------------');
-          console.log('🚀 NEW LEAD DETECTED FROM META!');
-          console.log(`Lead ID: ${leadgen_id} | Form: ${form_id}`);
-
-         try {
-            // Step 1: Fetch full details using the Service we built
+          try {
+            // Step 1: Fetch basic lead data (Name/Phone)
             const leadData = await fetchLeadDetails(leadgen_id);
 
             if (leadData) {
-              console.log(`📦 DATA RETRIEVED for ${leadData.fullName}`);
+              // --- 🚀 PERMANENT ENRICHMENT FIX ---
+              // Default values ensure the folder ALWAYS shows up in the UI
+              let formName = "Standard Form";
+              let adName = "Direct / Test Lead"; 
 
-              // Step 2: Enrichment - Fetching the actual names from Meta
-              const [formRes, adRes] = await Promise.all([
-                axios.get(`https://graph.facebook.com/v22.0/${form_id}?fields=name&access_token=${process.env.FB_PAGE_ACCESS_TOKEN}`),
-                axios.get(`https://graph.facebook.com/v22.0/${ad_id}?fields=name&access_token=${process.env.FB_PAGE_ACCESS_TOKEN}`)
-              ]);
+              try {
+                // Fetch Names individually so one failure doesn't stop the other
+                const [formRes, adRes] = await Promise.allSettled([
+                  axios.get(`https://graph.facebook.com/v22.0/${form_id}?fields=name&access_token=${process.env.FB_PAGE_ACCESS_TOKEN}`),
+                  ad_id ? axios.get(`https://graph.facebook.com/v22.0/${ad_id}?fields=name&access_token=${process.env.FB_PAGE_ACCESS_TOKEN}`) : Promise.reject("No Ad ID")
+                ]);
 
-              const formName = formRes.data.name; 
-              const adName = adRes.data.name;     
+                if (formRes.status === 'fulfilled') formName = formRes.value.data.name;
+                if (adRes.status === 'fulfilled') adName = adRes.value.data.name;
+                
+              } catch (enrichErr) {
+                console.log("Using default names for enrichment");
+              }
 
               // Step 3: Save/Update in MongoDB
+              // Even if enrichment fails, we SAVE the lead with the default adName
               await Lead.findOneAndUpdate(
                 { leadId: leadgen_id }, 
                 {                       
@@ -141,35 +152,99 @@ app.post('/webhook', async (req: Request, res: Response) => {
                   fullName: leadData.fullName,
                   phoneNumber: leadData.phoneNumber,
                   email: leadData.email,
-                  // 👇 IMPORTANT: We MUST add these here to save them to the DB!
                   formName: formName, 
                   adName: adName,     
                   status: 'pending',
-                  // 🚀 CHANGE THIS LINE
-                  capturedAt: leadData.created_time ? new Date(leadData.created_time) : new Date(),                },
-                { 
-                  upsert: true,         
-                  new: true,            
-                  runValidators: true 
-                }
+                  capturedAt: leadData.created_time ? new Date(leadData.created_time) : new Date(),
+                },
+                { upsert: true, new: true }
               );
 
-              console.log(`💾 Lead for ${leadData.fullName} synced with Form: ${formName}`);
+              console.log(`✅ Lead Processed: ${leadData.fullName} -> Campaign: ${adName}`);
             }
           } catch (error) {
-            console.error('❌ Error processing lead data:', error);
+            console.error('❌ Critical Error processing lead:', error);
           }
-          console.log('-------------------------------------------');
         }
       }
     }
-    
-    // Meta requires a 200 OK response to stop retrying the webhook
     return res.status(200).send('EVENT_RECEIVED');
   }
-
   res.sendStatus(404);
 });
+// --- 2. THE LEAD PROCESSOR (POST) ---
+// This handles actual lead data from Richinnovations business ads
+// app.post('/webhook', async (req: Request, res: Response) => {
+//   const body = req.body;
+
+//   if (body.object === 'page') {
+//     // Meta sends an array of entries
+//     for (const entry of body.entry) {
+//       for (const change of entry.changes) {
+//         if (change.field === 'leadgen') {
+//           const { leadgen_id, form_id, ad_id, page_id } = change.value;
+          
+//           console.log('-------------------------------------------');
+//           console.log('🚀 NEW LEAD DETECTED FROM META!');
+//           console.log(`Lead ID: ${leadgen_id} | Form: ${form_id}`);
+
+//          try {
+//             // Step 1: Fetch full details using the Service we built
+//             const leadData = await fetchLeadDetails(leadgen_id);
+
+//             if (leadData) {
+              
+//               console.log(`📦 DATA RETRIEVED for ${leadData.fullName}`);
+
+//               // Step 2: Enrichment - Fetching the actual names from Meta
+//               const [formRes, adRes] = await Promise.all([
+//                 axios.get(`https://graph.facebook.com/v22.0/${form_id}?fields=name&access_token=${process.env.FB_PAGE_ACCESS_TOKEN}`),
+//                 axios.get(`https://graph.facebook.com/v22.0/${ad_id}?fields=name&access_token=${process.env.FB_PAGE_ACCESS_TOKEN}`)
+//               ]);
+
+//               const formName = formRes.data.name; 
+//               const adName = adRes.data.name;     
+
+//               // Step 3: Save/Update in MongoDB
+//               await Lead.findOneAndUpdate(
+//                 { leadId: leadgen_id }, 
+//                 {                       
+//                   leadId: leadgen_id,
+//                   adId: ad_id,
+//                   formId: form_id,
+//                   pageId: page_id,
+//                   fullName: leadData.fullName,
+//                   phoneNumber: leadData.phoneNumber,
+//                   email: leadData.email,
+//                   // 👇 IMPORTANT: We MUST add these here to save them to the DB!
+//                   formName: formName, 
+//                   adName: adName,     
+//                   status: 'pending',
+//                   // 🚀 CHANGE THIS LINE
+//                   capturedAt: leadData.created_time ? new Date(leadData.created_time) : new Date(),                },
+//                 { 
+//                   upsert: true,         
+//                   new: true,            
+//                   runValidators: true 
+//                 }
+//               );
+
+//               console.log(`💾 Lead for ${leadData.fullName} synced with Form: ${formName}`);
+//             }
+//           } catch (error) {
+//             console.error('❌ Error processing lead data:', error);
+//           }
+//           console.log('-------------------------------------------');
+//         }
+//       }
+//     }
+    
+//     // Meta requires a 200 OK response to stop retrying the webhook
+//     return res.status(200).send('EVENT_RECEIVED');
+//   }
+
+//   res.sendStatus(404);
+// });
 
 app.get("/", (req: Request, res: Response) => {
   res.send("Backend API running 🚀");
