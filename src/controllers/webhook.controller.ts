@@ -4,6 +4,7 @@ import { Request, Response } from "express";
 import { createCalendarEvent } from "../services/calendarService";
 import Contact from "../models/Contact";
 import { calendarWebhook } from "./calendar.controller";
+import Lead from "../models/Lead"; // 👈 Make sure to import Lead
 
 /**
  * syncCallStatus: Keeps your manual sync logic working perfectly.
@@ -87,6 +88,8 @@ export const handleBolnaWebhook = async (req: Request, res: Response) => {
   const orgName = context_details?.recipient_data?.organization || "Tesla";
   const teamName = context_details?.recipient_data?.team || "General";
   const agentPrompt = context_details?.recipient_data?.prompt || "";
+  const isFinalStatus = status === "completed" || status === "connected";
+  const finalStatus = isFinalStatus ? "completed" : "failed";
 
   try {
     // 1. Update contact status
@@ -96,7 +99,13 @@ export const handleBolnaWebhook = async (req: Request, res: Response) => {
       { $set: { status: contactStatus } },
       { new: true }
     );
-
+await Lead.findOneAndUpdate(
+      { 
+        phoneNumber: { $regex: normalized_phone }, // Matches even if formatting differs
+        status: "calling" 
+      },
+      { $set: { status: finalStatus } }
+    );
     // 2. Save/Update call log (Upsert ensures we catch cost whether it comes in 'connected' or 'completed')
     await CallLog.findOneAndUpdate(
       { bolnaCallId: call_id },
@@ -150,6 +159,7 @@ export const handleBolnaWebhook = async (req: Request, res: Response) => {
     // 5. Handle Legacy AI booking (for backward compatibility)
     const appointment_time = extracted_data?.appointment_time;
     if (appointment_time && tenant_id) {
+      
       await createCalendarEvent(tenant_id.toString(), {
         summary: `AI Booking: ${updatedContact?.name || normalized_phone}`,
         startTime: appointment_time,

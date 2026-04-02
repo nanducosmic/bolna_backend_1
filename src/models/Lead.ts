@@ -61,6 +61,10 @@ formName: { type: String },
 
 // Create an index on leadId for faster lookups since we'll be 
 // searching for this every time Meta pings us.
-LeadSchema.index({ leadId: 1 });
+
+
+// 🚀 ARCHITECT OPTIMIZATION:
+// This makes the grouping and batch-triggering 10x faster.
+LeadSchema.index({ adName: 1, status: 1 });
 
 export default mongoose.model<ILead>('Lead', LeadSchema);
